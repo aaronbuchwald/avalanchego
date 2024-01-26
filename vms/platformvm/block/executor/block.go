@@ -63,13 +63,14 @@ func createDiscrepancyError(expected map[ids.NodeID]*snowValidators.GetValidator
 }
 
 func hook(b *Block) error {
-	// Skip any block whose height is sufficiently below our starting target block: https://subnets.avax.network/p-chain/block/11269260
-	if b.Height() < 11269260 {
+	qHeight := uint64(11269268)
+
+	// Skip any block whose height is sufficiently below the block height we want: https://subnets.avax.network/p-chain/block/11269268
+	if b.Height() < qHeight {
 		return nil
 	}
 
-	qHeight := 11269268
-	res, err := b.manager.backend.ctx.ValidatorState.GetValidatorSet(context.Background(), uint64(qHeight), constants.PrimaryNetworkID)
+	res, err := b.manager.backend.ctx.ValidatorState.GetValidatorSet(context.Background(), qHeight, constants.PrimaryNetworkID)
 	if err != nil {
 		return err
 	}
