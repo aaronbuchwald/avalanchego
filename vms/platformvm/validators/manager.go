@@ -5,6 +5,7 @@ package validators
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/ava-labs/avalanchego/vms/platformvm/metrics"
 	"github.com/ava-labs/avalanchego/vms/platformvm/status"
 	"github.com/ava-labs/avalanchego/vms/platformvm/txs"
+	"go.uber.org/zap"
 )
 
 const (
@@ -186,9 +188,20 @@ func (m *manager) GetValidatorSet(
 	targetHeight uint64,
 	subnetID ids.ID,
 ) (map[ids.NodeID]*validators.GetValidatorOutput, error) {
+	qHeight := uint64(11269268)
+	targetedVdrSet := qHeight == targetHeight
 	validatorSetsCache := m.getValidatorSetCache(subnetID)
 
+	if targetedVdrSet {
+		m.log.Info("Targeted GetValidatorSet called",
+			zap.Uint64("targetHeight", targetHeight),
+			zap.Stringer("subnetID", subnetID),
+		)
+	}
 	if validatorSet, ok := validatorSetsCache.Get(targetHeight); ok {
+		if targetedVdrSet {
+			m.log.Error("Targeted GetValidatorSet read from cache, this should never happen")
+		}
 		m.metrics.IncValidatorSetsCached()
 		return validatorSet, nil
 	}
@@ -202,7 +215,7 @@ func (m *manager) GetValidatorSet(
 		err           error
 	)
 	if subnetID == constants.PrimaryNetworkID {
-		validatorSet, currentHeight, err = m.makePrimaryNetworkValidatorSet(ctx, targetHeight)
+		validatorSet, currentHeight, err = m.makePrimaryNetworkValidatorSet(ctx, targetHeight, targetedVdrSet)
 	} else {
 		validatorSet, currentHeight, err = m.makeSubnetValidatorSet(ctx, targetHeight, subnetID)
 	}
@@ -211,7 +224,13 @@ func (m *manager) GetValidatorSet(
 	}
 
 	// cache the validator set
-	validatorSetsCache.Put(targetHeight, validatorSet)
+	if !targetedVdrSet {
+		validatorSetsCache.Put(targetHeight, validatorSet)
+	}
+
+	if targetedVdrSet {
+		m.log.Info("Successfully calculated primary network validator set")
+	}
 
 	duration := m.clk.Time().Sub(startTime)
 	m.metrics.IncValidatorSetsCreated()
@@ -241,6 +260,7 @@ func (m *manager) getValidatorSetCache(subnetID ids.ID) cache.Cacher[uint64, map
 func (m *manager) makePrimaryNetworkValidatorSet(
 	ctx context.Context,
 	targetHeight uint64,
+	targetedVdrSet bool,
 ) (map[ids.NodeID]*validators.GetValidatorOutput, uint64, error) {
 	validatorSet, currentHeight, err := m.getCurrentPrimaryValidatorSet(ctx)
 	if err != nil {
@@ -248,6 +268,12 @@ func (m *manager) makePrimaryNetworkValidatorSet(
 	}
 	if currentHeight < targetHeight {
 		return nil, 0, database.ErrNotFound
+	}
+	if targetedVdrSet {
+		m.log.Info("making primary network validator set",
+			zap.Uint64("targetHeight", targetHeight),
+			zap.Uint64("currentHeight", currentHeight),
+		)
 	}
 
 	// Rebuild primary network validators at [targetHeight]
@@ -274,6 +300,17 @@ func (m *manager) makePrimaryNetworkValidatorSet(
 		currentHeight,
 		lastDiffHeight,
 	)
+	if targetedVdrSet {
+		vdrSetBytes, err := json.Marshal(validatorSet)
+		if err != nil {
+			panic(err)
+		}
+		m.log.Info("made primary network validator set",
+			zap.Uint64("targetHeight", targetHeight),
+			zap.Uint64("currentHeight", currentHeight),
+			zap.String("vdrSetJSON", string(vdrSetBytes)),
+		)
+	}
 	return validatorSet, currentHeight, err
 }
 
