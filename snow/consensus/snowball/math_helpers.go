@@ -36,6 +36,33 @@ func binomial(p *big.Float, k, alpha int) *big.Float {
 	return probability
 }
 
+// portionVirtuousBlue is the portion of nodes in the network that are both virtuous and currently blue
+// portionByzantine is the portion of nodes that are byzantine
+// portionByzantineBlue is the portion of byzantine nodes that are showing blue
+func calculateExpectedBluePortionWithByzantine(portionVirtuousBlue, portionByzantine, portionByzantineBlue *big.Float, k, alpha int) *big.Float {
+	virtuous := big.NewFloat(1)
+	virtuous = virtuous.Sub(virtuous, portionByzantine)
+
+	portionByzantineShowingBlue := new(big.Float).Mul(portionByzantine, portionByzantineBlue)
+
+	portionShowingBlue := new(big.Float).Add(portionVirtuousBlue, portionByzantineShowingBlue)
+	portionShowingRed := big.NewFloat(1)
+	portionShowingRed.Sub(portionShowingRed, portionShowingBlue)
+
+	prFlipBlue := binomial(portionShowingBlue, k, alpha)
+	prFlipRed := binomial(portionShowingRed, k, alpha)
+	prNotFlipRed := big.NewFloat(1)
+	prNotFlipRed.Sub(prNotFlipRed, prFlipRed)
+
+	expectedVirtuousStaysBlue := new(big.Float).Mul(portionVirtuousBlue, prNotFlipRed)
+
+	portionVirtuousRed := new(big.Float).Sub(virtuous, portionVirtuousBlue)
+	expectedVirtuousFlipBlue := new(big.Float).Mul(portionVirtuousRed, prFlipBlue)
+
+	return new(big.Float).Add(expectedVirtuousStaysBlue, expectedVirtuousFlipBlue)
+
+}
+
 // calculateExpectedBluePortion calculates the expected portion of nodes that will be blue in the next round
 // given all nodes follow the protocol with the given parameters.
 func calculateExpectedBluePortion(portionBlue, portionByzantine *big.Float, k, alpha int) *big.Float {
