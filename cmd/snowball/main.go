@@ -13,6 +13,13 @@ import (
 	"gonum.org/v1/gonum/mathext/prng"
 )
 
+// TODO
+// add basic logging
+// switch to synchronous rounds
+// add flag for number of simulation runs
+// add flag/config to run a set of simulations and output a csv/graph
+// switch to target expected value byzantine strategy
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Printf("failed due to %s\n", err)
@@ -79,6 +86,9 @@ func run(args []string) error {
 
 	if !network.Finalized() {
 		return fmt.Errorf("failed to finalize afer %d rounds", maxRounds)
+	}
+	if network.Disagreement() {
+		return fmt.Errorf("encountered disagreement after %d rounds", i)
 	}
 	return nil
 }
