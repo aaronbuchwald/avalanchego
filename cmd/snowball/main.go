@@ -16,7 +16,6 @@ import (
 )
 
 // TODO
-// switch to synchronous rounds
 // add flag for number of simulation runs
 // add flag/config to run a set of simulations and output a csv/graph
 // switch to target expected value byzantine strategy
