@@ -9,7 +9,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/sampler"
 )
 
-type newConsensusFunc func(cf ConsensusFactory, params Parameters, choice ids.ID) Consensus
+type NewConsensusFunc func(cf ConsensusFactory, params Parameters, choice ids.ID) Consensus
 
 type Network struct {
 	params         Parameters
@@ -32,7 +32,7 @@ func NewNetwork(cf ConsensusFactory, params Parameters, numColors int, rngSource
 	return n
 }
 
-func (n *Network) AddNode(newConsensusFunc newConsensusFunc) Consensus {
+func (n *Network) AddNode(newConsensusFunc NewConsensusFunc) Consensus {
 	s := sampler.NewDeterministicUniform(n.rngSource)
 	s.Initialize(uint64(len(n.colors)))
 	indices, _ := s.Sample(len(n.colors))
@@ -54,7 +54,7 @@ func (n *Network) AddNode(newConsensusFunc newConsensusFunc) Consensus {
 // initially prefer [initialPreference] and additionally adds each of the
 // specified [options] to consensus.
 func (n *Network) AddNodeSpecificColor(
-	newConsensusFunc newConsensusFunc,
+	newConsensusFunc NewConsensusFunc,
 	initialPreference int,
 	options []int,
 ) Consensus {
