@@ -4,20 +4,22 @@
 package main
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/ava-labs/avalanchego/snow/consensus/snowball"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/spf13/pflag"
-	"go.uber.org/zap"
 	"gonum.org/v1/gonum/mathext/prng"
 )
 
 // TODO
-// add flag/config to run a set of simulations and output a csv/graph
 // switch to target expected value byzantine strategy
+// convert from csv output to a graph
+// output a distribution graph showing the distribution of rounds to termination
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -72,6 +74,23 @@ func run(args []string) error {
 		return fmt.Errorf("invalid snow type input: %q", snowType)
 	}
 
+	writer := io.Writer(log)
+	outputPath := v.GetString(OutputFileKey)
+	if len(outputPath) != 0 {
+		f, err := os.Create(os.ExpandEnv(outputPath))
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+		writer = io.MultiWriter(writer, f)
+	}
+	csvWriter := csv.NewWriter(writer)
+	defer csvWriter.Flush()
+
+	csvWriter.Write([]string{"sim", "rounds"})
+
 	maxRounds := v.GetInt(MaxRoundsKey)
 	numSimulations := v.GetInt(NumSimulationsKey)
 
@@ -106,7 +125,13 @@ func run(args []string) error {
 		if network.Disagreement() {
 			return fmt.Errorf("encountered disagreement after %d rounds", round)
 		}
-		log.Info("Consensus simulation terminated.", zap.Int("simulation", sim), zap.Int("rounds", round))
+
+		if err := csvWriter.Write([]string{
+			fmt.Sprintf("%d", sim),
+			fmt.Sprintf("%d", round),
+		}); err != nil {
+			return fmt.Errorf("failed to write output on sim %d: %w", sim, err)
+		}
 	}
 	return nil
 }
