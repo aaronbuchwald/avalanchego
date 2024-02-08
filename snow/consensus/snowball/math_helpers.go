@@ -105,8 +105,12 @@ func newByzantineVoter(interval, portionByzantine float64, k, alpha int) *byzant
 	}
 }
 
+func (b byzantineVoter) virtuousBlueResultsIndex(virtuousBlue float64) int {
+	return int(math.Round((virtuousBlue - b.start) / b.interval))
+}
+
 func (b byzantineVoter) indexAndExpectedWeight(virtuousBlue float64) (int, float64) {
-	index := int(math.Round((virtuousBlue - b.start) / b.interval))
+	index := b.virtuousBlueResultsIndex(virtuousBlue)
 
 	precalculatedResults := b.precalculatedResults[index]
 	allRedRes := precalculatedResults[0]

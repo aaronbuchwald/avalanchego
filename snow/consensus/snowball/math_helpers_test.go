@@ -4,13 +4,40 @@
 package snowball
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 )
 
 func TestByzantineVoter(t *testing.T) {
-	bv := newByzantineVoter(0.01, 0.1, 20, 11)
+	interval := float64(0.01)
+	bv := newByzantineVoter(interval, 0.1, 20, 11)
 
-	index, expectedNextBlue := bv.indexAndExpectedWeight(0.1)
-	byzBlue := bv.getByzantinePercentageBlue(0.1)
-	t.Fatal(index, expectedNextBlue, byzBlue, len(bv.precalculatedResults[0]), bv.precalculatedResults)
+	sb := strings.Builder{}
+	for virtuousBlue, byzBlueToExpectedBlue := range bv.precalculatedResults {
+		var (
+			start = 0
+			end   = len(byzBlueToExpectedBlue) - 1
+		)
+		allRedRes := byzBlueToExpectedBlue[start]
+		// if answering all red, still puts us above the blue target range, then vote minority strategy dominates
+		if allRedRes > bv.blueTarget {
+			continue
+		}
+
+		// if answering all blue, still puts us below the blue target range, then vote minority strategy dominates
+		allBlueRes := byzBlueToExpectedBlue[end]
+		if allBlueRes < bv.blueTarget {
+			continue
+		}
+
+		// if the minority strategy does not dominate, then output the interesting section of the results
+		sb.WriteString(fmt.Sprintf("\n%.2f", float64(virtuousBlue)*interval))
+
+		for byzBlueIndex, expectedBlue := range byzBlueToExpectedBlue {
+			byzBlue := float64(byzBlueIndex) * interval
+			sb.WriteString(fmt.Sprintf("\n(ByzBlue = %.2f, ExpectedBlue = %.2f)", byzBlue, expectedBlue))
+		}
+	}
+	t.Fatal(sb.String())
 }
