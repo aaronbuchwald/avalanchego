@@ -54,3 +54,53 @@ func (b *Byzantine) String() string {
 }
 
 func (b *Byzantine) SetNetwork(*Network) {}
+
+func NewByzantineMinorityVote(_ ConsensusFactory, _ Parameters, _ ids.ID) Consensus {
+	return &ByzantineMinorityVote{}
+}
+
+// ByzantineMinorityVote is a byzantine implementation of consensus that always
+// votes for the current minority color of the network.
+type ByzantineMinorityVote struct {
+	network *Network
+}
+
+func (*ByzantineMinorityVote) Add(ids.ID) {}
+
+func (b *ByzantineMinorityVote) Preference() ids.ID {
+	// TODO: switch to maintaining preference count inside the network to avoid reapting
+	// calculation for each byzantine node.
+	preferences := make(map[ids.ID]int)
+	for _, node := range b.network.virtuous {
+		preferences[node.Preference()]++
+	}
+
+	minColor := b.network.colors[0]
+	minColorPref := preferences[minColor]
+
+	for color, pref := range preferences {
+		if pref < minColorPref {
+			minColor = color
+			minColorPref = pref
+		}
+	}
+	return minColor
+}
+
+func (*ByzantineMinorityVote) RecordPoll(bag.Bag[ids.ID]) bool {
+	return false
+}
+
+func (*ByzantineMinorityVote) RecordUnsuccessfulPoll() {}
+
+func (*ByzantineMinorityVote) Finalized() bool {
+	return true
+}
+
+func (b *ByzantineMinorityVote) String() string {
+	return "ByzantineMinorityVoter"
+}
+
+func (b *ByzantineMinorityVote) SetNetwork(n *Network) {
+	b.network = n
+}

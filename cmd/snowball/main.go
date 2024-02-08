@@ -111,7 +111,7 @@ func run(args []string) error {
 		}
 
 		for i := 0; i < byzantineNodes; i++ {
-			_ = network.AddNode(snowball.NewByzantine)
+			_ = network.AddNode(snowball.NewByzantineMinorityVote)
 		}
 
 		round := 0

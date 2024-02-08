@@ -69,8 +69,10 @@ func (n *Network) addNodeWithColor(newConsensusFunc NewConsensusFunc, initialCol
 		n.running = append(n.running, consensus)
 	}
 
-	if _, ok := consensus.(Byzantiner); !ok {
+	if byz, ok := consensus.(Byzantiner); !ok {
 		n.virtuous = append(n.virtuous, consensus)
+	} else {
+		byz.SetNetwork(n)
 	}
 
 	return consensus
