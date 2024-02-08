@@ -108,6 +108,46 @@ func (n *Network) Round() {
 	}
 }
 
+// SyncRound simulates a round of consensus where every node sends an unbiased poll
+// of the nodes in the network in the current state.
+// Nodes only execute their polls AFTER all results have been delivered.
+func (n *Network) SyncRound() {
+	s := sampler.NewDeterministicUniform(n.rngSource)
+
+	s.Initialize(uint64(len(n.running)))
+
+	s.Initialize(uint64(len(n.nodes)))
+	count := min(n.params.K, len(n.nodes))
+
+	pollResults := make([]bag.Bag[ids.ID], len(n.running))
+
+	for i := range n.running {
+		indices, _ := s.Sample(count)
+		sampledColors := bag.Bag[ids.ID]{}
+		for _, index := range indices {
+			peer := n.nodes[int(index)]
+			sampledColors.Add(peer.Preference())
+		}
+
+		pollResults[i] = sampledColors
+	}
+
+	removeIndices := make([]int, 0)
+	for i, node := range n.running {
+		node.RecordPoll(pollResults[i])
+
+		if node.Finalized() {
+			removeIndices = append(removeIndices, i)
+		}
+	}
+
+	for i, index := range removeIndices {
+		newSize := len(n.running) - 1
+		n.running[index-i] = n.running[newSize]
+		n.running = n.running[:newSize]
+	}
+}
+
 // Disagreement returns true iff there are any two nodes in the network that
 // have finalized two different preferences.
 func (n *Network) Disagreement() bool {

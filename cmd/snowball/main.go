@@ -9,12 +9,13 @@ import (
 	"os"
 
 	"github.com/ava-labs/avalanchego/snow/consensus/snowball"
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap"
 	"gonum.org/v1/gonum/mathext/prng"
 )
 
 // TODO
-// add basic logging
 // switch to synchronous rounds
 // add flag for number of simulation runs
 // add flag/config to run a set of simulations and output a csv/graph
@@ -25,7 +26,6 @@ func main() {
 		fmt.Printf("failed due to %s\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("terminated successfully\n")
 }
 
 func run(args []string) error {
@@ -37,6 +37,19 @@ func run(args []string) error {
 		fmt.Printf("failed to build config: %s\n", err)
 		os.Exit(1)
 	}
+
+	level, err := logging.ToLevel(v.GetString(LogLevelKey))
+	if err != nil {
+		return err
+	}
+	log := logging.NewLogger(
+		"snowball-simulation",
+		logging.NewWrappedCore(
+			level,
+			os.Stdout,
+			logging.Colors.ConsoleEncoder(),
+		),
+	)
 
 	var (
 		cf     snowball.ConsensusFactory
@@ -52,11 +65,13 @@ func run(args []string) error {
 	)
 	source.Seed(seed)
 
-	switch v.GetString(SnowTypeKey) {
+	switch snowType := v.GetString(SnowTypeKey); snowType {
 	case "snowball":
 		cf = snowball.SnowballFactory{}
-	default:
+	case "snowflake":
 		cf = snowball.SnowflakeFactory{}
+	default:
+		return fmt.Errorf("invalid snow type input: %q", snowType)
 	}
 
 	network := snowball.NewNetwork(cf, params, 2, source)
@@ -79,16 +94,17 @@ func run(args []string) error {
 	}
 
 	maxRounds := 100_000
-	i := 0
-	for ; i < maxRounds && !network.Finalized(); i++ {
-		network.Round()
+	round := 0
+	for ; round < maxRounds && !network.Finalized(); round++ {
+		network.SyncRound()
 	}
 
 	if !network.Finalized() {
 		return fmt.Errorf("failed to finalize afer %d rounds", maxRounds)
 	}
 	if network.Disagreement() {
-		return fmt.Errorf("encountered disagreement after %d rounds", i)
+		return fmt.Errorf("encountered disagreement after %d rounds", round)
 	}
+	log.Info("Consensus terminated.", zap.Int("rounds", round))
 	return nil
 }
