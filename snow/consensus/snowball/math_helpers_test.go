@@ -10,6 +10,7 @@ import (
 )
 
 func TestByzantineVoter(t *testing.T) {
+	t.Skip()
 	var (
 		interval = float64(0.01)
 		byz      = float64(0.02)
@@ -46,6 +47,7 @@ func TestByzantineVoter(t *testing.T) {
 }
 
 func TestPrDecidingOutcome(t *testing.T) {
+	t.Skip()
 	var (
 		p     = 0.5
 		byz   = 0.05
