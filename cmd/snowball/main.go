@@ -16,7 +16,6 @@ import (
 )
 
 // TODO
-// exempt byzantine nodes from agreement check
 // add flag/config to run a set of simulations and output a csv/graph
 // switch to target expected value byzantine strategy
 

@@ -13,8 +13,13 @@ var (
 	Blue  = ids.Empty.Prefix(1)
 	Green = ids.Empty.Prefix(2)
 
-	_ Consensus = (*Byzantine)(nil)
+	_ Consensus  = (*Byzantine)(nil)
+	_ Byzantiner = (*Byzantine)(nil)
 )
+
+type Byzantiner interface {
+	SetNetwork(*Network)
+}
 
 func NewByzantine(_ ConsensusFactory, _ Parameters, choice ids.ID) Consensus {
 	return &Byzantine{
@@ -47,3 +52,5 @@ func (*Byzantine) Finalized() bool {
 func (b *Byzantine) String() string {
 	return b.preference.String()
 }
+
+func (b *Byzantine) SetNetwork(*Network) {}

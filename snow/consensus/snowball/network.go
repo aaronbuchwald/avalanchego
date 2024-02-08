@@ -12,11 +12,13 @@ import (
 type NewConsensusFunc func(cf ConsensusFactory, params Parameters, choice ids.ID) Consensus
 
 type Network struct {
-	params         Parameters
-	colors         []ids.ID
-	rngSource      sampler.Source
-	nodes, running []Consensus
-	cf             ConsensusFactory
+	params    Parameters
+	colors    []ids.ID
+	rngSource sampler.Source
+	nodes     []Consensus
+	virtuous  []Consensus
+	running   []Consensus
+	cf        ConsensusFactory
 }
 
 // Create a new network with [numColors] different possible colors to finalize.
@@ -36,18 +38,12 @@ func (n *Network) AddNode(newConsensusFunc NewConsensusFunc) Consensus {
 	s := sampler.NewDeterministicUniform(n.rngSource)
 	s.Initialize(uint64(len(n.colors)))
 	indices, _ := s.Sample(len(n.colors))
-
-	consensus := newConsensusFunc(n.cf, n.params, n.colors[int(indices[0])])
-	for _, index := range indices[1:] {
-		consensus.Add(n.colors[int(index)])
+	initialColor := n.colors[int(indices[0])]
+	options := make([]int, len(indices)-1)
+	for i, option := range indices[1:] {
+		options[i] = int(option)
 	}
-
-	n.nodes = append(n.nodes, consensus)
-	if !consensus.Finalized() {
-		n.running = append(n.running, consensus)
-	}
-
-	return consensus
+	return n.addNodeWithColor(newConsensusFunc, initialColor, options)
 }
 
 // AddNodeSpecificColor adds a new consensus instance to the network which will
@@ -58,7 +54,11 @@ func (n *Network) AddNodeSpecificColor(
 	initialPreference int,
 	options []int,
 ) Consensus {
-	consensus := newConsensusFunc(n.cf, n.params, n.colors[initialPreference])
+	return n.addNodeWithColor(newConsensusFunc, n.colors[initialPreference], options)
+}
+
+func (n *Network) addNodeWithColor(newConsensusFunc NewConsensusFunc, initialColor ids.ID, options []int) Consensus {
+	consensus := newConsensusFunc(n.cf, n.params, initialColor)
 
 	for _, i := range options {
 		consensus.Add(n.colors[i])
@@ -67,6 +67,10 @@ func (n *Network) AddNodeSpecificColor(
 	n.nodes = append(n.nodes, consensus)
 	if !consensus.Finalized() {
 		n.running = append(n.running, consensus)
+	}
+
+	if _, ok := consensus.(Byzantiner); !ok {
+		n.virtuous = append(n.virtuous, consensus)
 	}
 
 	return consensus
@@ -153,18 +157,18 @@ func (n *Network) SyncRound() {
 func (n *Network) Disagreement() bool {
 	// Iterate [i] to the index of the first node that has finalized.
 	i := 0
-	for ; i < len(n.nodes) && !n.nodes[i].Finalized(); i++ {
+	for ; i < len(n.virtuous) && !n.virtuous[i].Finalized(); i++ {
 	}
 	// If none of the nodes have finalized, then there is no disagreement.
-	if i >= len(n.nodes) {
+	if i >= len(n.virtuous) {
 		return false
 	}
 
 	// Return true if any other finalized node has finalized a different
 	// preference.
-	pref := n.nodes[i].Preference()
-	for ; i < len(n.nodes); i++ {
-		if node := n.nodes[i]; node.Finalized() && pref != node.Preference() {
+	pref := n.virtuous[i].Preference()
+	for ; i < len(n.virtuous); i++ {
+		if node := n.virtuous[i]; node.Finalized() && pref != node.Preference() {
 			return true
 		}
 	}
@@ -173,11 +177,11 @@ func (n *Network) Disagreement() bool {
 
 // Agreement returns true iff every node in the network prefers the same value.
 func (n *Network) Agreement() bool {
-	if len(n.nodes) == 0 {
+	if len(n.virtuous) == 0 {
 		return true
 	}
-	pref := n.nodes[0].Preference()
-	for _, node := range n.nodes {
+	pref := n.virtuous[0].Preference()
+	for _, node := range n.virtuous {
 		if pref != node.Preference() {
 			return false
 		}
