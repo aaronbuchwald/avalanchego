@@ -44,3 +44,22 @@ func TestByzantineVoter(t *testing.T) {
 	}
 	t.Fatal(sb.String())
 }
+
+func TestPrDecidingOutcome(t *testing.T) {
+	var (
+		p     = 0.5
+		byz   = 0.05
+		k     = 20
+		alpha = 11
+	)
+	prIVotes := prDecideReachAlpha(p, byz, k, alpha)
+	sb := strings.Builder{}
+
+	s := float64(0)
+	for i, prIVotes := range prIVotes {
+		fl, _ := prIVotes.Float64()
+		sb.WriteString(fmt.Sprintf("\n%d = %.2f", i, fl))
+		s += fl
+	}
+	t.Fatal(sb.String(), s, prBlueWithNoByzantineInfluence(p, byz, k, alpha))
+}
