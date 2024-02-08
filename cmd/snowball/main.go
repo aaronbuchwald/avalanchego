@@ -16,7 +16,7 @@ import (
 )
 
 // TODO
-// add flag for number of simulation runs
+// exempt byzantine nodes from agreement check
 // add flag/config to run a set of simulations and output a csv/graph
 // switch to target expected value byzantine strategy
 
@@ -73,37 +73,41 @@ func run(args []string) error {
 		return fmt.Errorf("invalid snow type input: %q", snowType)
 	}
 
-	network := snowball.NewNetwork(cf, params, 2, source)
+	maxRounds := v.GetInt(MaxRoundsKey)
+	numSimulations := v.GetInt(NumSimulationsKey)
 
-	n := v.GetInt(NKey)
-	byzantineNodes := int(v.GetFloat64(ByzKey) * float64(n))
-	virtuousNodes := n - byzantineNodes
-	blueNodes := int(v.GetFloat64(BlueKey) * float64(virtuousNodes))
-	redNodes := virtuousNodes - blueNodes
+	for sim := 0; sim < numSimulations; sim++ {
+		network := snowball.NewNetwork(cf, params, 2, source)
 
-	for i := 0; i < blueNodes; i++ {
-		_ = network.AddNodeSpecificColor(snowball.NewFlat, 0, []int{1})
-	}
-	for i := 0; i < redNodes; i++ {
-		_ = network.AddNodeSpecificColor(snowball.NewFlat, 1, []int{0})
-	}
+		n := v.GetInt(NKey)
+		byzantineNodes := int(v.GetFloat64(ByzKey) * float64(n))
+		virtuousNodes := n - byzantineNodes
+		blueNodes := int(v.GetFloat64(BlueKey) * float64(virtuousNodes))
+		redNodes := virtuousNodes - blueNodes
 
-	for i := 0; i < byzantineNodes; i++ {
-		_ = network.AddNode(snowball.NewByzantine)
-	}
+		for i := 0; i < blueNodes; i++ {
+			_ = network.AddNodeSpecificColor(snowball.NewFlat, 0, []int{1})
+		}
+		for i := 0; i < redNodes; i++ {
+			_ = network.AddNodeSpecificColor(snowball.NewFlat, 1, []int{0})
+		}
 
-	maxRounds := 100_000
-	round := 0
-	for ; round < maxRounds && !network.Finalized(); round++ {
-		network.SyncRound()
-	}
+		for i := 0; i < byzantineNodes; i++ {
+			_ = network.AddNode(snowball.NewByzantine)
+		}
 
-	if !network.Finalized() {
-		return fmt.Errorf("failed to finalize afer %d rounds", maxRounds)
+		round := 0
+		for ; round < maxRounds && !network.Finalized(); round++ {
+			network.SyncRound()
+		}
+
+		if !network.Finalized() {
+			return fmt.Errorf("failed to finalize afer %d rounds", maxRounds)
+		}
+		if network.Disagreement() {
+			return fmt.Errorf("encountered disagreement after %d rounds", round)
+		}
+		log.Info("Consensus simulation terminated.", zap.Int("simulation", sim), zap.Int("rounds", round))
 	}
-	if network.Disagreement() {
-		return fmt.Errorf("encountered disagreement after %d rounds", round)
-	}
-	log.Info("Consensus terminated.", zap.Int("rounds", round))
 	return nil
 }

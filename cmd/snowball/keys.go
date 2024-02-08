@@ -21,6 +21,8 @@ const (
 	NKey               = "n"
 	BlueKey            = "blue"
 	ByzKey             = "byz"
+	NumSimulationsKey  = "num-simulations"
+	MaxRoundsKey       = "max-rounds"
 	OutputFileKey      = "output-file"
 )
 
@@ -36,6 +38,8 @@ func BuildViper(args []string) (*viper.Viper, error) {
 		fs.Int(NKey, 500, "Specify the total number of nodes to include in the simulation.")
 		fs.Float64(BlueKey, 0.5, "Specify the portion of the virtuous nodes to initialize to blue.")
 		fs.Float64(ByzKey, 0.0, "Specify the byzantine portion of the network.")
+		fs.Int(MaxRoundsKey, 10_000, "Specify the maximum number of rounds to run before terminating the simulation.")
+		fs.Int(NumSimulationsKey, 1, "Specify the number of simulations to run.")
 		fs.String(OutputFileKey, "", "Specify the location to write results to a CSV file.")
 	}, args)
 }
