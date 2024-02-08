@@ -47,10 +47,6 @@ func TestSnowballGovernance(t *testing.T) {
 		nBitwise.Round()
 	}
 
-	for _, node := range nBitwise.nodes {
-		if _, ok := node.(*Byzantine); ok {
-			continue
-		}
-		require.Equal(nBitwise.colors[0], node.Preference())
-	}
+	require.Equal(nBitwise.colors[0], nBitwise.nodes[0].Preference())
+	require.True(nBitwise.Agreement())
 }
