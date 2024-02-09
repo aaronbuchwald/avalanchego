@@ -143,7 +143,6 @@ func precalculateExpectedBluePortionWithByzantine(start, end, interval, portionB
 	for portionVirtuousBlue := start; portionVirtuousBlue <= end; portionVirtuousBlue += interval {
 		// Range from placing 0 to 100% of byzantine voting power towards blue.
 		byzantineBlueToExpectedBlue := make([]float64, 0)
-		// This is my bug, this should result in (1 / interval) and it should be (1 / interval) + 1 sine it's inclusive...
 		for i := 0; i <= int((end-start)/interval); i += 1 {
 			portionByzantineBlue := start + float64(i)*interval
 			expectedBlue := calculateExpectedBluePortionWithByzantine(big.NewFloat(portionVirtuousBlue), big.NewFloat(portionByzantine), big.NewFloat(portionByzantineBlue), k, alpha)

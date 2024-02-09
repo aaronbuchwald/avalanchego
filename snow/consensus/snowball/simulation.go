@@ -16,6 +16,7 @@ type Simulation struct {
 	network        *Network
 	byzantine      []*Byzantine
 	byzantineVoter *ByzantineVoter
+	stepThrough    bool
 }
 
 func NewSimulation(
@@ -27,6 +28,7 @@ func NewSimulation(
 	initialVirtuousBlue float64,
 	byz float64,
 	rngSource sampler.Source,
+	stepThrough bool,
 ) *Simulation {
 	network := NewNetwork(cf, params, 2, rngSource)
 	byzantineNodes := int(float64(numNodes) * byz)
@@ -39,6 +41,7 @@ func NewSimulation(
 		network:        network,
 		byzantineVoter: byzVoter,
 		log:            log,
+		stepThrough:    stepThrough,
 	}
 
 	for i := 0; i < blueNodes; i++ {
@@ -84,6 +87,11 @@ func (s *Simulation) Execute(
 			zap.Float64("expectedNextBlue", expectedNextBlue),
 		)
 
+		if s.stepThrough {
+			fmt.Printf("Hit enter to continue:\n")
+			fmt.Scanln()
+		}
+
 		s.network.SyncRound()
 	}
 
@@ -108,10 +116,11 @@ func ExecuteSimulations(
 	rngSource sampler.Source,
 	numSimulations int,
 	maxRounds int,
+	stepThrough bool,
 ) []int {
 	simulationResults := make([]int, numSimulations)
 	for i := 0; i < numSimulations; i++ {
-		sim := NewSimulation(log, cf, params, newVirtuousConsensus, numNodes, initialVirtuousBlue, byz, rngSource)
+		sim := NewSimulation(log, cf, params, newVirtuousConsensus, numNodes, initialVirtuousBlue, byz, rngSource, stepThrough)
 		roundsToTermination, err := sim.Execute(maxRounds)
 		if err != nil {
 			log.Warn("simulation failed", zap.Error(err))
@@ -136,6 +145,7 @@ func ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
 	rngSource sampler.Source,
 	numSimulations int,
 	maxRounds int,
+	stepThrough bool,
 ) map[float64][]int {
 	byzResults := make(map[float64][]int)
 	for _, byz := range byzAdversaries {
@@ -150,6 +160,7 @@ func ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
 			rngSource,
 			numSimulations,
 			maxRounds,
+			stepThrough,
 		)
 
 		byzResults[byz] = res

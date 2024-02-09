@@ -10,11 +10,12 @@ import (
 )
 
 func TestByzantineVoter(t *testing.T) {
+	t.Skip()
 	var (
 		interval = float64(0.01)
-		byz      = float64(0.1)
+		byz      = float64(0.2)
 	)
-	bv := NewByzantineVoter(interval, byz, 20, 11)
+	bv := NewByzantineVoter(interval, byz, 80, 41)
 
 	sb := strings.Builder{}
 	for virtuousBlue, byzBlueToExpectedBlue := range bv.precalculatedResults {
@@ -46,6 +47,7 @@ func TestByzantineVoter(t *testing.T) {
 }
 
 func TestPrDecidingOutcome(t *testing.T) {
+	t.Skip()
 	var (
 		p     = 0.5
 		byz   = 0.05

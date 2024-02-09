@@ -16,7 +16,6 @@ import (
 )
 
 // TODO
-// debug byz strategy with alpha pref set to k/2 + 1
 // graph the data potentially in python
 
 func main() {
@@ -117,6 +116,7 @@ func run(args []string) error {
 		source,
 		v.GetInt(NumSimulationsKey),
 		v.GetInt(MaxRoundsKey),
+		v.GetBool(StepThroughKey),
 	)
 
 	outputFilePath := v.GetString(OutputFileKey)
