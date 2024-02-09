@@ -7,27 +7,51 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/ava-labs/avalanchego/snow/consensus/snowball"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/spf13/pflag"
-	"go.uber.org/zap"
 	"gonum.org/v1/gonum/mathext/prng"
 )
 
 // TODO
-// create a function given a set of parameters to run a single simulation and output rounds to termination / failure
-// separate out the functionality to output a CSV file
-// create graphs of 1) scatter plot of rounds to termination with a given byz % 2) byz % vs distribution of rounds to termination over n simulations
 // debug byz strategy with alpha pref set to k/2 + 1
+// graph the data potentially in python
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Printf("failed due to %s\n", err)
 		os.Exit(1)
 	}
+}
+
+func writeSimulationResultsToCSV(outputPath string, results []int) error {
+	f, err := os.Create(os.ExpandEnv(outputPath))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	csvWriter := csv.NewWriter(f)
+	defer csvWriter.Flush()
+
+	if err := csvWriter.Write([]string{"sim", "rounds"}); err != nil {
+		return err
+	}
+
+	for i, result := range results {
+		if err := csvWriter.Write([]string{
+			fmt.Sprintf("%d", i),
+			fmt.Sprintf("%d", result),
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func run(args []string) error {
@@ -76,101 +100,31 @@ func run(args []string) error {
 		return fmt.Errorf("invalid snow type input: %q", snowType)
 	}
 
-	writer := io.Writer(log)
-	outputPath := v.GetString(OutputFileKey)
-	if len(outputPath) != 0 {
-		f, err := os.Create(os.ExpandEnv(outputPath))
-		if err != nil {
-			return err
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-		writer = io.MultiWriter(writer, f)
+	byzPortionsInt := v.GetIntSlice(ByzKey)
+	byzPortions := make([]float64, len(byzPortionsInt))
+	for i, byzInt := range byzPortionsInt {
+		byzPortions[i] = float64(byzInt) / float64(100)
 	}
-	csvWriter := csv.NewWriter(writer)
-	defer csvWriter.Flush()
 
-	csvWriter.Write([]string{"sim", "rounds"})
+	byzResults := snowball.ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
+		log,
+		cf,
+		params,
+		snowball.NewFlat,
+		v.GetInt(NKey),
+		v.GetFloat64(BlueKey),
+		byzPortions,
+		source,
+		v.GetInt(NumSimulationsKey),
+		v.GetInt(MaxRoundsKey),
+	)
 
-	stepThrough := v.GetBool(StepThroughKey)
-	maxRounds := v.GetInt(MaxRoundsKey)
-	numSimulations := v.GetInt(NumSimulationsKey)
-	n := v.GetInt(NKey)
-	byzantinePortion := v.GetFloat64(ByzKey)
-	numByzantineNodes := int(byzantinePortion * float64(n))
-	virtuousNodes := n - numByzantineNodes
-	blueNodes := int(v.GetFloat64(BlueKey) * float64(virtuousNodes))
-	redNodes := virtuousNodes - blueNodes
-
-	byzVoter := snowball.NewByzantineVoter(0.01, byzantinePortion, params.K, params.AlphaPreference)
-
-	for sim := 0; sim < numSimulations; sim++ {
-		network := snowball.NewNetwork(cf, params, 2, source)
-		blue := network.GetColor(0)
-		red := network.GetColor(1)
-
-		for i := 0; i < blueNodes; i++ {
-			_ = network.AddNodeSpecificColor(snowball.NewFlat, 0, []int{1})
-		}
-		for i := 0; i < redNodes; i++ {
-			_ = network.AddNodeSpecificColor(snowball.NewFlat, 1, []int{0})
-		}
-
-		byzantineNodes := make([]*snowball.Byzantine, numByzantineNodes)
-		for i := 0; i < numByzantineNodes; i++ {
-			byzantineNodes[i] = network.AddNode(snowball.NewByzantine).(*snowball.Byzantine)
-		}
-
-		round := 0
-		for ; round < maxRounds && !network.Finalized(); round++ {
-			network.SyncRound()
-
-			preferences := network.Preferences()
-			blueWeight := preferences[0]
-			blueVirtuousPortion := float64(blueWeight) / float64(virtuousNodes)
-			blueVirtuousOverN := float64(blueWeight) / float64(n)
-			byzBluePortion := byzVoter.GetByzantinePercentageBlue(blueVirtuousOverN)
-			blueCutoff := int(byzBluePortion * float64(len(byzantineNodes)))
-			totalBlue := blueWeight + blueCutoff
-
-			log.Info("Preference update",
-				zap.Int("sim", sim),
-				zap.Int("round", round),
-				zap.Float64("blueVirtuousPortion", blueVirtuousPortion),
-				zap.Float64("blueVirtuousOverN", blueVirtuousOverN),
-				zap.Float64("byzBlue", byzBluePortion),
-				zap.Int("byzBlueCutoff", blueCutoff),
-				zap.Int("byzNodes", numByzantineNodes),
-				zap.Int("totalBlue", totalBlue),
-			)
-
-			if stepThrough {
-				fmt.Printf("press enter to continue\n")
-				fmt.Scanln()
+	outputFilePath := v.GetString(OutputFileKey)
+	for byzPortion, results := range byzResults {
+		if len(outputFilePath) > 0 {
+			if err := writeSimulationResultsToCSV(fmt.Sprintf("%.2f_%s.csv", byzPortion, outputFilePath), results); err != nil {
+				return err
 			}
-
-			for i, byz := range byzantineNodes {
-				if i < blueCutoff {
-					byz.SetPreference(blue)
-				} else {
-					byz.SetPreference(red)
-				}
-			}
-		}
-
-		if !network.Finalized() {
-			return fmt.Errorf("failed to finalize afer %d rounds", maxRounds)
-		}
-		if network.Disagreement() {
-			return fmt.Errorf("encountered disagreement after %d rounds", round)
-		}
-
-		if err := csvWriter.Write([]string{
-			fmt.Sprintf("%d", sim),
-			fmt.Sprintf("%d", round),
-		}); err != nil {
-			return fmt.Errorf("failed to write output on sim %d: %w", sim, err)
 		}
 	}
 	return nil

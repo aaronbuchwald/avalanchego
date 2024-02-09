@@ -131,9 +131,9 @@ func (b ByzantineVoter) indexAndExpectedWeight(virtuousBlue float64) (int, float
 	return byzBlueIndex, precalculatedResults[byzBlueIndex]
 }
 
-func (b ByzantineVoter) GetByzantinePercentageBlue(virtuousBlue float64) float64 {
-	index, _ := b.indexAndExpectedWeight(virtuousBlue)
-	return float64(index) * b.interval
+func (b ByzantineVoter) GetByzantinePercentageBlueAndExpectedBlue(virtuousBlue float64) (float64, float64) {
+	index, expectedBlue := b.indexAndExpectedWeight(virtuousBlue)
+	return float64(index) * b.interval, expectedBlue
 }
 
 func precalculateExpectedBluePortionWithByzantine(start, end, interval, portionByzantine float64, k, alpha int) [][]float64 {

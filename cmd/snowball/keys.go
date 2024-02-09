@@ -38,7 +38,7 @@ func BuildViper(args []string) (*viper.Viper, error) {
 		fs.Int(BetaRogueKey, 20, "Specify the number of consecutive successful polls required to commit a rogue color.")
 		fs.Int(NKey, 500, "Specify the total number of nodes to include in the simulation.")
 		fs.Float64(BlueKey, 0.5, "Specify the portion of the virtuous nodes to initialize to blue.")
-		fs.Float64(ByzKey, 0.0, "Specify the byzantine portion of the network.")
+		fs.IntSlice(ByzKey, []int{0}, "Specify the byzantine portion of the network as an integer out of 100.")
 		fs.Int(MaxRoundsKey, 10_000, "Specify the maximum number of rounds to run before terminating the simulation.")
 		fs.Int(NumSimulationsKey, 1, "Specify the number of simulations to run.")
 		fs.Bool(StepThroughKey, false, "Specify to true to pause after each round.")

@@ -13,11 +13,11 @@ var (
 	Blue  = ids.Empty.Prefix(1)
 	Green = ids.Empty.Prefix(2)
 
-	_ Consensus  = (*Byzantine)(nil)
 	_ Byzantiner = (*Byzantine)(nil)
 )
 
 type Byzantiner interface {
+	Consensus
 	SetNetwork(*Network)
 }
 
