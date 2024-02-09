@@ -39,6 +39,10 @@ func (b *Byzantine) Preference() ids.ID {
 	return b.preference
 }
 
+func (b *Byzantine) SetPreference(pref ids.ID) {
+	b.preference = pref
+}
+
 func (*Byzantine) RecordPoll(bag.Bag[ids.ID]) bool {
 	return false
 }

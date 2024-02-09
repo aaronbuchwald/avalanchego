@@ -13,13 +13,15 @@ import (
 	"github.com/ava-labs/avalanchego/snow/consensus/snowball"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap"
 	"gonum.org/v1/gonum/mathext/prng"
 )
 
 // TODO
-// switch to target expected value byzantine strategy
-// convert from csv output to a graph
-// output a distribution graph showing the distribution of rounds to termination
+// create a function given a set of parameters to run a single simulation and output rounds to termination / failure
+// separate out the functionality to output a CSV file
+// create graphs of 1) scatter plot of rounds to termination with a given byz % 2) byz % vs distribution of rounds to termination over n simulations
+// debug byz strategy with alpha pref set to k/2 + 1
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -91,17 +93,22 @@ func run(args []string) error {
 
 	csvWriter.Write([]string{"sim", "rounds"})
 
+	stepThrough := v.GetBool(StepThroughKey)
 	maxRounds := v.GetInt(MaxRoundsKey)
 	numSimulations := v.GetInt(NumSimulationsKey)
+	n := v.GetInt(NKey)
+	byzantinePortion := v.GetFloat64(ByzKey)
+	numByzantineNodes := int(byzantinePortion * float64(n))
+	virtuousNodes := n - numByzantineNodes
+	blueNodes := int(v.GetFloat64(BlueKey) * float64(virtuousNodes))
+	redNodes := virtuousNodes - blueNodes
+
+	byzVoter := snowball.NewByzantineVoter(0.01, byzantinePortion, params.K, params.AlphaPreference)
 
 	for sim := 0; sim < numSimulations; sim++ {
 		network := snowball.NewNetwork(cf, params, 2, source)
-
-		n := v.GetInt(NKey)
-		byzantineNodes := int(v.GetFloat64(ByzKey) * float64(n))
-		virtuousNodes := n - byzantineNodes
-		blueNodes := int(v.GetFloat64(BlueKey) * float64(virtuousNodes))
-		redNodes := virtuousNodes - blueNodes
+		blue := network.GetColor(0)
+		red := network.GetColor(1)
 
 		for i := 0; i < blueNodes; i++ {
 			_ = network.AddNodeSpecificColor(snowball.NewFlat, 0, []int{1})
@@ -110,13 +117,46 @@ func run(args []string) error {
 			_ = network.AddNodeSpecificColor(snowball.NewFlat, 1, []int{0})
 		}
 
-		for i := 0; i < byzantineNodes; i++ {
-			_ = network.AddNode(snowball.NewByzantineMinorityVote)
+		byzantineNodes := make([]*snowball.Byzantine, numByzantineNodes)
+		for i := 0; i < numByzantineNodes; i++ {
+			byzantineNodes[i] = network.AddNode(snowball.NewByzantine).(*snowball.Byzantine)
 		}
 
 		round := 0
 		for ; round < maxRounds && !network.Finalized(); round++ {
 			network.SyncRound()
+
+			preferences := network.Preferences()
+			blueWeight := preferences[0]
+			blueVirtuousPortion := float64(blueWeight) / float64(virtuousNodes)
+			blueVirtuousOverN := float64(blueWeight) / float64(n)
+			byzBluePortion := byzVoter.GetByzantinePercentageBlue(blueVirtuousOverN)
+			blueCutoff := int(byzBluePortion * float64(len(byzantineNodes)))
+			totalBlue := blueWeight + blueCutoff
+
+			log.Info("Preference update",
+				zap.Int("sim", sim),
+				zap.Int("round", round),
+				zap.Float64("blueVirtuousPortion", blueVirtuousPortion),
+				zap.Float64("blueVirtuousOverN", blueVirtuousOverN),
+				zap.Float64("byzBlue", byzBluePortion),
+				zap.Int("byzBlueCutoff", blueCutoff),
+				zap.Int("byzNodes", numByzantineNodes),
+				zap.Int("totalBlue", totalBlue),
+			)
+
+			if stepThrough {
+				fmt.Printf("press enter to continue\n")
+				fmt.Scanln()
+			}
+
+			for i, byz := range byzantineNodes {
+				if i < blueCutoff {
+					byz.SetPreference(blue)
+				} else {
+					byz.SetPreference(red)
+				}
+			}
 		}
 
 		if !network.Finalized() {

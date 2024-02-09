@@ -57,6 +57,10 @@ func (n *Network) AddNodeSpecificColor(
 	return n.addNodeWithColor(newConsensusFunc, n.colors[initialPreference], options)
 }
 
+func (n *Network) GetColor(index int) ids.ID {
+	return n.colors[index]
+}
+
 func (n *Network) addNodeWithColor(newConsensusFunc NewConsensusFunc, initialColor ids.ID, options []int) Consensus {
 	consensus := newConsensusFunc(n.cf, n.params, initialColor)
 
@@ -152,6 +156,21 @@ func (n *Network) SyncRound() {
 		n.running[index-i] = n.running[newSize]
 		n.running = n.running[:newSize]
 	}
+}
+
+// Preferences returns the total weight of virtuous nodes behind each preference
+// in a slice in the same order as n.colors
+func (n *Network) Preferences() []int {
+	preferences := make(map[ids.ID]int)
+	for _, node := range n.virtuous {
+		preferences[node.Preference()]++
+	}
+
+	weights := make([]int, len(n.colors))
+	for i, color := range n.colors {
+		weights[i] = preferences[color]
+	}
+	return weights
 }
 
 // Disagreement returns true iff there are any two nodes in the network that

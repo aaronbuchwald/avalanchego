@@ -14,7 +14,7 @@ const (
 	LogLevelKey        = "log-level"
 	SnowTypeKey        = "snow"
 	KKey               = "k"
-	AlphaConfidenceKey = "alpha-confidence-key"
+	AlphaConfidenceKey = "alpha-confidence"
 	AlphaPreferenceKey = "alpha-preference"
 	BetaVirtuousKey    = "beta-virtuous"
 	BetaRogueKey       = "beta-rogue"
@@ -23,6 +23,7 @@ const (
 	ByzKey             = "byz"
 	NumSimulationsKey  = "num-simulations"
 	MaxRoundsKey       = "max-rounds"
+	StepThroughKey     = "step-through"
 	OutputFileKey      = "output-file"
 )
 
@@ -40,6 +41,7 @@ func BuildViper(args []string) (*viper.Viper, error) {
 		fs.Float64(ByzKey, 0.0, "Specify the byzantine portion of the network.")
 		fs.Int(MaxRoundsKey, 10_000, "Specify the maximum number of rounds to run before terminating the simulation.")
 		fs.Int(NumSimulationsKey, 1, "Specify the number of simulations to run.")
+		fs.Bool(StepThroughKey, false, "Specify to true to pause after each round.")
 		fs.String(OutputFileKey, "", "Specify the location to write results to a CSV file.")
 	}, args)
 }

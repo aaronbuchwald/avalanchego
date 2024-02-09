@@ -86,7 +86,7 @@ func calculateExpectedBluePortionWithByzantine(portionVirtuousBlue, portionByzan
 	return new(big.Float).Add(expectedVirtuousStaysBlue, expectedVirtuousFlipBlue)
 }
 
-type byzantineVoter struct {
+type ByzantineVoter struct {
 	start, end, interval, portionByzantine float64
 
 	precalculatedResults [][]float64
@@ -95,10 +95,9 @@ type byzantineVoter struct {
 	k, alpha   int
 }
 
-func newByzantineVoter(interval, portionByzantine float64, k, alpha int) *byzantineVoter {
+func NewByzantineVoter(interval, portionByzantine float64, k, alpha int) *ByzantineVoter {
 	precalculatedResults := precalculateExpectedBluePortionWithByzantine(0, 1, interval, portionByzantine, k, alpha)
-
-	return &byzantineVoter{
+	return &ByzantineVoter{
 		start:                0, // TODO: remove these as unnecessary if they're not going to be parameterizable
 		end:                  1,
 		interval:             interval,
@@ -110,11 +109,11 @@ func newByzantineVoter(interval, portionByzantine float64, k, alpha int) *byzant
 	}
 }
 
-func (b byzantineVoter) virtuousBlueResultsIndex(virtuousBlue float64) int {
+func (b ByzantineVoter) virtuousBlueResultsIndex(virtuousBlue float64) int {
 	return int(math.Round((virtuousBlue - b.start) / b.interval))
 }
 
-func (b byzantineVoter) indexAndExpectedWeight(virtuousBlue float64) (int, float64) {
+func (b ByzantineVoter) indexAndExpectedWeight(virtuousBlue float64) (int, float64) {
 	index := b.virtuousBlueResultsIndex(virtuousBlue)
 
 	precalculatedResults := b.precalculatedResults[index]
@@ -132,7 +131,7 @@ func (b byzantineVoter) indexAndExpectedWeight(virtuousBlue float64) (int, float
 	return byzBlueIndex, precalculatedResults[byzBlueIndex]
 }
 
-func (b byzantineVoter) getByzantinePercentageBlue(virtuousBlue float64) float64 {
+func (b ByzantineVoter) GetByzantinePercentageBlue(virtuousBlue float64) float64 {
 	index, _ := b.indexAndExpectedWeight(virtuousBlue)
 	return float64(index) * b.interval
 }
