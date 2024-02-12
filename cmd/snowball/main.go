@@ -15,9 +15,6 @@ import (
 	"gonum.org/v1/gonum/mathext/prng"
 )
 
-// TODO
-// graph the data potentially in python
-
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Printf("failed due to %s\n", err)
@@ -25,7 +22,7 @@ func main() {
 	}
 }
 
-func writeSimulationResultsToCSV(outputPath string, results []int) error {
+func writeSimulationResultsToCSV(outputPath string, results map[float64][]int) error {
 	f, err := os.Create(os.ExpandEnv(outputPath))
 	if err != nil {
 		return err
@@ -37,16 +34,18 @@ func writeSimulationResultsToCSV(outputPath string, results []int) error {
 	csvWriter := csv.NewWriter(f)
 	defer csvWriter.Flush()
 
-	if err := csvWriter.Write([]string{"sim", "rounds"}); err != nil {
+	if err := csvWriter.Write([]string{"byz", "rounds"}); err != nil {
 		return err
 	}
 
-	for i, result := range results {
-		if err := csvWriter.Write([]string{
-			fmt.Sprintf("%d", i),
-			fmt.Sprintf("%d", result),
-		}); err != nil {
-			return err
+	for byz, results := range results {
+		for _, result := range results {
+			if err := csvWriter.Write([]string{
+				fmt.Sprintf("%.2f", byz),
+				fmt.Sprintf("%d", result),
+			}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -120,11 +119,9 @@ func run(args []string) error {
 	)
 
 	outputFilePath := v.GetString(OutputFileKey)
-	for byzPortion, results := range byzResults {
-		if len(outputFilePath) > 0 {
-			if err := writeSimulationResultsToCSV(fmt.Sprintf("%.2f_%s.csv", byzPortion, outputFilePath), results); err != nil {
-				return err
-			}
+	if len(outputFilePath) != 0 {
+		if err := writeSimulationResultsToCSV(outputFilePath, byzResults); err != nil {
+			return err
 		}
 	}
 	return nil
