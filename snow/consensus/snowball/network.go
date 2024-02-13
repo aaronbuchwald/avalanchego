@@ -124,8 +124,6 @@ func (n *Network) Round() {
 func (n *Network) SyncRound() {
 	s := sampler.NewDeterministicUniform(n.rngSource)
 
-	s.Initialize(uint64(len(n.running)))
-
 	s.Initialize(uint64(len(n.nodes)))
 	count := min(n.params.K, len(n.nodes))
 

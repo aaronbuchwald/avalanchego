@@ -12,7 +12,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow/consensus/snowball"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/spf13/pflag"
-	"gonum.org/v1/gonum/mathext/prng"
+	"golang.org/x/exp/rand"
 )
 
 func main() {
@@ -85,9 +85,8 @@ func run(args []string) error {
 			BetaRogue:       v.GetInt(BetaRogueKey),
 		}
 		seed   uint64 = 0
-		source        = prng.NewMT19937()
+		source        = rand.NewSource(seed)
 	)
-	source.Seed(seed)
 
 	switch snowType := v.GetString(SnowTypeKey); snowType {
 	case "snowball":
@@ -108,7 +107,6 @@ func run(args []string) error {
 		log,
 		cf,
 		params,
-		snowball.NewFlat,
 		v.GetInt(NKey),
 		v.GetFloat64(BlueKey),
 		byzPortions,

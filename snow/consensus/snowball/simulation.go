@@ -9,6 +9,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/sampler"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 type Simulation struct {
@@ -23,7 +24,6 @@ func NewSimulation(
 	log logging.Logger,
 	cf ConsensusFactory,
 	params Parameters,
-	newVirtuousConsensus NewConsensusFunc,
 	numNodes int,
 	initialVirtuousBlue float64,
 	byz float64,
@@ -109,7 +109,6 @@ func ExecuteSimulations(
 	log logging.Logger,
 	cf ConsensusFactory,
 	params Parameters,
-	newVirtuousConsensus NewConsensusFunc,
 	numNodes int,
 	initialVirtuousBlue float64,
 	byz float64,
@@ -118,18 +117,26 @@ func ExecuteSimulations(
 	maxRounds int,
 	stepThrough bool,
 ) []int {
+	eg := errgroup.Group{}
+	eg.SetLimit(10)
 	simulationResults := make([]int, numSimulations)
 	for i := 0; i < numSimulations; i++ {
-		sim := NewSimulation(log, cf, params, newVirtuousConsensus, numNodes, initialVirtuousBlue, byz, rngSource, stepThrough)
-		roundsToTermination, err := sim.Execute(maxRounds)
-		if err != nil {
-			log.Warn("simulation failed", zap.Error(err))
-			simulationResults[i] = maxRounds // Record maxRounds in place of failure
-			continue
-		}
+		i := i
+		eg.Go(func() error {
 
-		simulationResults[i] = roundsToTermination
+			sim := NewSimulation(log, cf, params, numNodes, initialVirtuousBlue, byz, rngSource, stepThrough)
+			roundsToTermination, err := sim.Execute(maxRounds)
+			if err != nil {
+				log.Warn("simulation failed", zap.Error(err))
+				simulationResults[i] = maxRounds // Record maxRounds in place of failure
+				return nil
+			}
+	
+			simulationResults[i] = roundsToTermination
+			return nil
+		})
 	}
+	eg.Wait()
 
 	return simulationResults
 }
@@ -138,7 +145,6 @@ func ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
 	log logging.Logger,
 	cf ConsensusFactory,
 	params Parameters,
-	newVirtuousConsensus NewConsensusFunc,
 	numNodes int,
 	initialVirtuousBlue float64,
 	byzAdversaries []float64,
@@ -153,7 +159,6 @@ func ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
 			log,
 			cf,
 			params,
-			newVirtuousConsensus,
 			numNodes,
 			initialVirtuousBlue,
 			byz,
