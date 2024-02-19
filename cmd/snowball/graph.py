@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Read the CSV file into a pandas DataFrame
-data = pd.read_csv('snow-sim-output.csv')
+data = pd.read_csv('snow-sim-output-k-80.csv')
 
 # Create a scatter plot
 plt.scatter(data['byz'], data['rounds'], alpha=0.5)
