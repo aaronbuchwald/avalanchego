@@ -3,11 +3,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def graph_byz_round_to_termination(csv: str):
+def graph_byz_round_to_termination(csv: str, n: int, k: int, save_path: str = None):
     sns.set_theme(style="ticks") # sets a global theme
 
     # Initialize the figure with a linear x axis
-    f, ax = plt.subplots(figsize=(7, 6))
+    f, ax = plt.subplots(figsize=(10, 8))
     ax.set_xscale("linear")
 
     # Load the sim output data
@@ -19,7 +19,7 @@ def graph_byz_round_to_termination(csv: str):
     sns.violinplot(
         simdata, x="byz", y="rounds", hue="byz", width=.4, palette="vlag",
         # whis=[0, 100],
-    )
+    ).set_title('Byzantine Stake vs. Rounds to Termination')
 
     # Add in points to show each observation
     sns.stripplot(simdata, x="byz", y="rounds", size=1, color=".4")
@@ -29,10 +29,16 @@ def graph_byz_round_to_termination(csv: str):
     ax.set(ylabel="")
     sns.despine(trim=True, left=True)
 
+    plt.figtext(0.9, 0.05, f'n = {n}\nk = {k}', ha='center', va='center', fontsize=10, bbox=dict(facecolor='white', alpha=0.5, edgecolor='black'))
+
+
+    if save_path is not None:
+        plt.savefig(save_path)
+
     plt.show()
 
 def run():
-    graph_byz_round_to_termination('snow-sim-output-k-80.csv')
+    graph_byz_round_to_termination('snow-sim-output-k-80.csv', 500, 80, 'byz-vs-rounds-k-80.png')
 
 if __name__ == "__main__":
     run()
