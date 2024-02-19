@@ -38,7 +38,9 @@ def graph_byz_round_to_termination(csv: str, n: int, k: int, save_path: str = No
     plt.show()
 
 def run():
-    graph_byz_round_to_termination('snow-sim-output-k-80.csv', 500, 80, 'byz-vs-rounds-k-80.png')
+    n, k = 500, 80
+    base = f'snow-sim-output-n-{n}-k-{k}'
+    graph_byz_round_to_termination(f'{base}.csv', n, k, f'{base}.png')
 
 if __name__ == "__main__":
     run()
