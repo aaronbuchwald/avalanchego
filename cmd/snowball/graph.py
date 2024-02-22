@@ -39,7 +39,7 @@ def graph_byz_round_to_termination(csv: str, n: int, k: int, save_path: str = No
 
 def run():
     n, k = 10000, 80
-    base = f'snow-sim-output-n-{n}-k-{k}'
+    base = f'snow-sim/snow-sim-output-n-{n}-k-{k}'
     graph_byz_round_to_termination(f'{base}.csv', n, k, f'{base}.png')
 
 if __name__ == "__main__":
