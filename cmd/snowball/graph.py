@@ -15,11 +15,11 @@ def graph_byz_round_to_termination(csv: str, n: int, k: int, save_path: str = No
     # Load the sim output data
     simdata = pd.read_csv(csv)
 
-    # Plot the portion of byzantine stake vs. rounds to termination
+    # Plot the portion of byzantine weight vs. rounds to termination
     # capped at 1k rounds
     # violin plot may be good too
     sns.violinplot(
-        simdata, x="byz", y="rounds", hue="byz", width=.2, palette=sns.color_palette("ch:s=.25,rot=-.25", as_cmap=True),
+        simdata, x="byz", y="rounds", hue="byz", width=.2, palette=None, legend=False,
         # whis=[0.25, 0.75],
     ).set_title(f"n = {'{:,}'.format(n)}", fontsize=fontsize)
 
@@ -28,7 +28,7 @@ def graph_byz_round_to_termination(csv: str, n: int, k: int, save_path: str = No
 
     # Tweak the visual presentation
     ax.xaxis.grid(True)
-    ax.set_xlabel("Byzantine Stake", fontsize=fontsize)
+    ax.set_xlabel("Byzantine Percentage", fontsize=fontsize)
     ax.set_ylabel("Rounds to Termination", fontsize=fontsize)
     sns.despine(trim=True, left=True)
 
@@ -52,4 +52,4 @@ def save_each():
         graph_byz_round_to_termination(f'{base}.csv', n, k, f'{base}.png')
 
 if __name__ == "__main__":
-    show()
+    save_each()
