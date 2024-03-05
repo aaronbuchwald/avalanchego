@@ -22,7 +22,7 @@ type Simulation struct {
 
 func NewSimulation(
 	log logging.Logger,
-	cf ConsensusFactory,
+	cf Factory,
 	params Parameters,
 	numNodes int,
 	initialVirtuousBlue float64,
@@ -107,7 +107,7 @@ func (s *Simulation) Execute(
 
 func ExecuteSimulations(
 	log logging.Logger,
-	cf ConsensusFactory,
+	cf Factory,
 	params Parameters,
 	numNodes int,
 	initialVirtuousBlue float64,
@@ -131,7 +131,7 @@ func ExecuteSimulations(
 				simulationResults[i] = maxRounds // Record maxRounds in place of failure
 				return nil
 			}
-	
+
 			simulationResults[i] = roundsToTermination
 			return nil
 		})
@@ -143,7 +143,7 @@ func ExecuteSimulations(
 
 func ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
 	log logging.Logger,
-	cf ConsensusFactory,
+	cf Factory,
 	params Parameters,
 	numNodes int,
 	initialVirtuousBlue float64,

@@ -9,7 +9,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/sampler"
 )
 
-type NewConsensusFunc func(cf ConsensusFactory, params Parameters, choice ids.ID) Consensus
+type NewConsensusFunc func(cf Factory, params Parameters, choice ids.ID) Consensus
 
 type Network struct {
 	params    Parameters
@@ -18,11 +18,11 @@ type Network struct {
 	nodes     []Consensus
 	virtuous  []Consensus
 	running   []Consensus
-	cf        ConsensusFactory
+	cf        Factory
 }
 
 // Create a new network with [numColors] different possible colors to finalize.
-func NewNetwork(cf ConsensusFactory, params Parameters, numColors int, rngSource sampler.Source) *Network {
+func NewNetwork(cf Factory, params Parameters, numColors int, rngSource sampler.Source) *Network {
 	n := &Network{
 		params:    params,
 		rngSource: rngSource,
