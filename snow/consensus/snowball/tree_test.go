@@ -810,11 +810,12 @@ func TestSnowballConsistent(t *testing.T) {
 		source        = prng.NewMT19937()
 	)
 
-	n := NewNetwork(SnowballFactory, params, numColors, source)
+	n := NewNetwork(params, numColors, source)
 
 	source.Seed(seed)
+	cf := NewTreeFactory(SnowballFactory)
 	for i := 0; i < numNodes; i++ {
-		n.AddNode(NewTree)
+		n.AddNode(cf)
 	}
 
 	for !n.Finalized() && !n.Disagreement() {

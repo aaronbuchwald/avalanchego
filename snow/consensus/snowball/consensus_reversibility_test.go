@@ -23,11 +23,11 @@ func TestSnowballGovernance(t *testing.T) {
 		source              = prng.NewMT19937()
 	)
 
-	nBitwise := NewNetwork(SnowballFactory, params, numColors, source)
+	nBitwise := NewNetwork(params, numColors, source)
 
 	source.Seed(seed)
 	for i := 0; i < numRed; i++ {
-		nBitwise.AddNodeSpecificColor(NewTree, 0, []int{1})
+		nBitwise.AddNodeSpecificColor(NewTreeFactory(SnowballFactory), 0, []int{1})
 	}
 
 	for _, node := range nBitwise.nodes {
@@ -35,7 +35,7 @@ func TestSnowballGovernance(t *testing.T) {
 	}
 
 	for i := 0; i < numNodes-numByzantine-numRed; i++ {
-		nBitwise.AddNodeSpecificColor(NewTree, 1, []int{0})
+		nBitwise.AddNodeSpecificColor(NewTreeFactory(SnowballFactory), 1, []int{0})
 	}
 
 	for i := 0; i < numByzantine; i++ {

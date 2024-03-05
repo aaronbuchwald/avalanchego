@@ -17,6 +17,12 @@ func NewFlat(factory Factory, params Parameters, choice ids.ID) Consensus {
 	}
 }
 
+func NewFlatFactory(factory Factory) NewConsensusFunc {
+	return func(params Parameters, choice ids.ID) Consensus {
+		return NewFlat(factory, params, choice)
+	}
+}
+
 // Flat is a naive implementation of a multi-choice snow instance
 type Flat struct {
 	// wraps the n-nary snow logic

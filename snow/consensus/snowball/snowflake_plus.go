@@ -40,6 +40,14 @@ type snowflakePlus struct {
 	preference ids.ID
 }
 
+// NewSnowflakePlusSim returns a newConsensusFunc that returns a new snowflakePlus instances with hardcoded parameters
+// for simulatoin.
+func NewSnowflakePlusSum() NewConsensusFunc {
+	return func(_ Parameters, choice ids.ID) Consensus {
+		return newSnowflakePlus(41, 65, []int{65, 48, 37, 29, 23, 18, 15, 12, 10, 9, 7, 6, 5, 5, 4, 3}, choice)
+	}
+}
+
 func newSnowflakePlus(alphaPreference int, minAlphaConfidence int, betas []int, choice ids.ID) *snowflakePlus {
 	return &snowflakePlus{
 		alphaPreference:    alphaPreference,
@@ -83,7 +91,7 @@ func (s *snowflakePlus) RecordPoll(votes bag.Bag[ids.ID]) bool {
 		s.finalized = s.finalized || s.confidence[i] >= s.betas[i]
 	}
 	// Reset the confidence counter for each alpha threshold in (count, len(confidence))
-	for i := count - s.minAlphaConfidence + 1; i < len(s.confidence); i++ {
+	for i := count - s.minAlphaConfidence + 1; i > 0 && i < len(s.confidence); i++ {
 		s.confidence[i] = 0
 	}
 

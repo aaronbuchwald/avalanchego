@@ -76,7 +76,7 @@ func run(args []string) error {
 	)
 
 	var (
-		cf     snowball.ConsensusFactory
+		cf     snowball.NewConsensusFunc
 		params = snowball.Parameters{
 			K:               v.GetInt(KKey),
 			AlphaConfidence: v.GetInt(AlphaConfidenceKey),
@@ -90,9 +90,11 @@ func run(args []string) error {
 
 	switch snowType := v.GetString(SnowTypeKey); snowType {
 	case "snowball":
-		cf = snowball.SnowballFactory{}
+		cf = snowball.NewFlatFactory(snowball.SnowballFactory)
 	case "snowflake":
-		cf = snowball.SnowflakeFactory{}
+		cf = snowball.NewFlatFactory(snowball.SnowflakeFactory)
+	case "snowflake+":
+		cf = snowball.NewSnowflakePlusSum()
 	default:
 		return fmt.Errorf("invalid snow type input: %q", snowType)
 	}

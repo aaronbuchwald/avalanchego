@@ -29,19 +29,19 @@ func TestDualAlphaOptimization(t *testing.T) {
 		source        = prng.NewMT19937()
 	)
 
-	singleAlphaNetwork := NewNetwork(SnowballFactory, params, numColors, source)
+	singleAlphaNetwork := NewNetwork(params, numColors, source)
 
 	params.AlphaPreference = params.K/2 + 1
-	dualAlphaNetwork := NewNetwork(SnowballFactory, params, numColors, source)
+	dualAlphaNetwork := NewNetwork(params, numColors, source)
 
 	source.Seed(seed)
 	for i := 0; i < numNodes; i++ {
-		dualAlphaNetwork.AddNode(NewTree)
+		dualAlphaNetwork.AddNode(NewTreeFactory(SnowballFactory))
 	}
 
 	source.Seed(seed)
 	for i := 0; i < numNodes; i++ {
-		singleAlphaNetwork.AddNode(NewTree)
+		singleAlphaNetwork.AddNode(NewTreeFactory(SnowballFactory))
 	}
 
 	// Although this can theoretically fail with a correct implementation, it
@@ -62,17 +62,17 @@ func TestTreeConvergenceOptimization(t *testing.T) {
 		source           = prng.NewMT19937()
 	)
 
-	treeNetwork := NewNetwork(SnowballFactory, params, numColors, source)
-	flatNetwork := NewNetwork(SnowballFactory, params, numColors, source)
+	treeNetwork := NewNetwork(params, numColors, source)
+	flatNetwork := NewNetwork(params, numColors, source)
 
 	source.Seed(seed)
 	for i := 0; i < numNodes; i++ {
-		treeNetwork.AddNode(NewTree)
+		treeNetwork.AddNode(NewTreeFactory(SnowballFactory))
 	}
 
 	source.Seed(seed)
 	for i := 0; i < numNodes; i++ {
-		flatNetwork.AddNode(NewFlat)
+		flatNetwork.AddNode(NewFlatFactory(SnowballFactory))
 	}
 
 	// Although this can theoretically fail with a correct implementation, it

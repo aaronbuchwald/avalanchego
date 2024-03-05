@@ -22,7 +22,7 @@ type Simulation struct {
 
 func NewSimulation(
 	log logging.Logger,
-	cf Factory,
+	newConsensusFunc NewConsensusFunc,
 	params Parameters,
 	numNodes int,
 	initialVirtuousBlue float64,
@@ -30,7 +30,7 @@ func NewSimulation(
 	rngSource sampler.Source,
 	stepThrough bool,
 ) *Simulation {
-	network := NewNetwork(cf, params, 2, rngSource)
+	network := NewNetwork(params, 2, rngSource)
 	byzantineNodes := int(float64(numNodes) * byz)
 	virtuousNodes := numNodes - byzantineNodes
 	blueNodes := int(float64(virtuousNodes) * initialVirtuousBlue)
@@ -45,10 +45,10 @@ func NewSimulation(
 	}
 
 	for i := 0; i < blueNodes; i++ {
-		_ = network.AddNodeSpecificColor(NewFlat, 0, []int{1})
+		_ = network.AddNodeSpecificColor(newConsensusFunc, 0, []int{1})
 	}
 	for i := 0; i < redNodes; i++ {
-		_ = network.AddNodeSpecificColor(NewFlat, 1, []int{0})
+		_ = network.AddNodeSpecificColor(newConsensusFunc, 1, []int{0})
 	}
 	for i := 0; i < byzantineNodes; i++ {
 		s.byzantine = append(s.byzantine, network.AddNode(NewByzantine).(*Byzantine))
@@ -107,7 +107,7 @@ func (s *Simulation) Execute(
 
 func ExecuteSimulations(
 	log logging.Logger,
-	cf Factory,
+	newConsensusFunc NewConsensusFunc,
 	params Parameters,
 	numNodes int,
 	initialVirtuousBlue float64,
@@ -124,7 +124,7 @@ func ExecuteSimulations(
 		i := i
 		eg.Go(func() error {
 
-			sim := NewSimulation(log, cf, params, numNodes, initialVirtuousBlue, byz, rngSource, stepThrough)
+			sim := NewSimulation(log, newConsensusFunc, params, numNodes, initialVirtuousBlue, byz, rngSource, stepThrough)
 			roundsToTermination, err := sim.Execute(maxRounds)
 			if err != nil {
 				log.Warn("simulation failed", zap.Error(err))
@@ -143,7 +143,7 @@ func ExecuteSimulations(
 
 func ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
 	log logging.Logger,
-	cf Factory,
+	newConsensusFunc NewConsensusFunc,
 	params Parameters,
 	numNodes int,
 	initialVirtuousBlue float64,
@@ -157,7 +157,7 @@ func ExecuteSimulationsWithDifferentSizeByzantineAdversaries(
 	for _, byz := range byzAdversaries {
 		res := ExecuteSimulations(
 			log,
-			cf,
+			newConsensusFunc,
 			params,
 			numNodes,
 			initialVirtuousBlue,

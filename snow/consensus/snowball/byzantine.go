@@ -21,7 +21,7 @@ type Byzantiner interface {
 	SetNetwork(*Network)
 }
 
-func NewByzantine(_ Factory, _ Parameters, choice ids.ID) Consensus {
+func NewByzantine(_ Parameters, choice ids.ID) Consensus {
 	return &Byzantine{
 		preference: choice,
 	}
@@ -57,7 +57,7 @@ func (b *Byzantine) String() string {
 	return b.preference.String()
 }
 
-func (b *Byzantine) SetNetwork(*Network) {}
+func (*Byzantine) SetNetwork(*Network) {}
 
 func NewByzantineMinorityVote(_ Factory, _ Parameters, _ ids.ID) Consensus {
 	return &ByzantineMinorityVote{}
@@ -101,7 +101,7 @@ func (*ByzantineMinorityVote) Finalized() bool {
 	return true
 }
 
-func (b *ByzantineMinorityVote) String() string {
+func (*ByzantineMinorityVote) String() string {
 	return "ByzantineMinorityVoter"
 }
 
