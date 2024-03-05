@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
-
 	"go.uber.org/zap"
 
 	"github.com/ava-labs/avalanchego/cache"
@@ -43,9 +42,9 @@ const (
 	putGossipPeriod = 10
 )
 
-var _ Engine = (*Transitive)(nil)
+var _ common.Engine = (*Transitive)(nil)
 
-func New(config Config) (Engine, error) {
+func New(config Config) (common.Engine, error) {
 	return newTransitive(config)
 }
 

@@ -13,13 +13,9 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/semaphore"
-
-	"go.opentelemetry.io/otel/attribute"
-
-	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/ids"
@@ -28,6 +24,8 @@ import (
 	"github.com/ava-labs/avalanchego/utils/maybe"
 	"github.com/ava-labs/avalanchego/utils/set"
 	"github.com/ava-labs/avalanchego/utils/units"
+
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -781,7 +779,7 @@ func (db *merkleDB) NewView(
 		return nil, database.ErrClosed
 	}
 
-	newView, err := newView(db, db, changes)
+	view, err := newView(db, db, changes)
 	if err != nil {
 		return nil, err
 	}
@@ -790,8 +788,8 @@ func (db *merkleDB) NewView(
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
-	db.childViews = append(db.childViews, newView)
-	return newView, nil
+	db.childViews = append(db.childViews, view)
+	return view, nil
 }
 
 func (db *merkleDB) Has(k []byte) (bool, error) {
