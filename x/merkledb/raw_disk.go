@@ -8,21 +8,21 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/ava-labs/avalanchego/utils/maybe"
-	"github.com/ava-labs/avalanchego/utils/perms"
 	"os"
 	"path/filepath"
+
+	"github.com/ava-labs/avalanchego/utils/maybe"
+	"github.com/ava-labs/avalanchego/utils/perms"
 )
 
 const (
-	diskAddressSize          = 16
-	fileName                 = "merkle.db"
-	rootKeyDiskAddressOffset = 1
+	diskAddressSize           = 16
+	fileName                  = "merkle.db"
+	rootNodeDiskAddressOffset = 1
+	rootKeyDiskAddressOffset  = 17
 )
 
-var (
-	ErrFailedToFindNode = errors.New("Failed to find node.")
-)
+var ErrFailedToFindNode = errors.New("Failed to find node.")
 
 // [offset:offset+size]
 type diskAddress struct {
@@ -34,8 +34,8 @@ func (r diskAddress) end() int64 {
 	return r.offset + r.size
 }
 
-func (r diskAddress) bytes() [16]byte {
-	var bytes [16]byte
+func (r diskAddress) bytes() [diskAddressSize]byte {
+	var bytes [diskAddressSize]byte
 	binary.BigEndian.PutUint64(bytes[:8], uint64(r.offset))
 	binary.BigEndian.PutUint64(bytes[8:], uint64(r.size))
 	return bytes
@@ -93,11 +93,11 @@ func (r *rawDisk) setShutdownType(shutdownType []byte) error {
 }
 
 func (r *rawDisk) clearIntermediateNodes() error {
-	return errors.New("clear intermediate nodes and rebuild not supported for raw disk")
+	return nil
 }
 
 func (r *rawDisk) Compact(start, limit []byte) error {
-	return errors.New("not implemented")
+	return nil
 }
 
 func (r *rawDisk) HealthCheck(ctx context.Context) (interface{}, error) {
@@ -105,12 +105,19 @@ func (r *rawDisk) HealthCheck(ctx context.Context) (interface{}, error) {
 }
 
 func (r *rawDisk) closeWithRoot(root maybe.Maybe[*node]) error {
-	return errors.New("not implemented")
+	return nil
 }
 
 func (r *rawDisk) getRootKey() ([]byte, error) {
-	rootKeyBytes := make([]byte, 16)
-	_, err := r.file.ReadAt(rootKeyBytes, rootKeyDiskAddressOffset)
+	rootKeyDiskAddressBytes := make([]byte, diskAddressSize)
+	_, err := r.file.ReadAt(rootKeyDiskAddressBytes, rootNodeDiskAddressOffset)
+	if err != nil {
+		return nil, err
+	}
+	rootDiskAddress := &diskAddress{}
+	rootDiskAddress.decode(rootKeyDiskAddressBytes)
+	rootKeyBytes := make([]byte, rootDiskAddress.size)
+	_, err = r.file.ReadAt(rootKeyBytes, rootDiskAddress.offset)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +139,7 @@ func (r *rawDisk) writeChanges(ctx context.Context, changes *changeSummary) erro
 		dbn *diskBranchNode
 	}
 
-	frontierSet := make([]diskBranchNodeWithKey, len(changes.nodes))
+	frontierSet := make([]diskBranchNodeWithKey, 0, len(changes.nodes))
 	nodeToDiskAddressMap := make(map[Key]diskAddress, len(changes.nodes))
 	childToParentMap := make(map[Key]diskBranchNodeWithKey)
 	for key, changeNode := range changes.nodes {
@@ -226,8 +233,8 @@ func (r *rawDisk) Clear() error {
 func (r *rawDisk) getNode(key Key, hasValue bool) (*node, error) {
 	// read the root node
 	var err error
-	diskAddressBytes := make([]byte, 16)
-	_, err = r.file.ReadAt(diskAddressBytes, rootKeyDiskAddressOffset)
+	diskAddressBytes := make([]byte, diskAddressSize)
+	_, err = r.file.ReadAt(diskAddressBytes, rootNodeDiskAddressOffset)
 	if err != nil {
 		return nil, err
 	}
@@ -238,13 +245,18 @@ func (r *rawDisk) getNode(key Key, hasValue bool) (*node, error) {
 	if err != nil {
 		return nil, err
 	}
-	//if !key.HasPrefix(merkleRootNode) { // TODO: figure out why this is needed
-	//	return nil
-	//}
+	rootKeyBytes, err := r.getRootKey()
+	if err != nil {
+		return nil, err
+	}
+	rootKey := ToKey(rootKeyBytes)
+	if !key.HasPrefix(rootKey) {
+		return nil, fmt.Errorf("%w: No node at key %x", ErrFailedToFindNode, key.Bytes())
+	}
 	var (
 		// all node paths start at the root
 		currentNode    = merkleRootNode
-		currentNodeKey = ToKey([]byte{})
+		currentNodeKey = rootKey
 	)
 
 	for currentNodeKey.length < key.length {

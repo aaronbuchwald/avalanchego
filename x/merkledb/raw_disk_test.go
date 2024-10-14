@@ -1,9 +1,10 @@
 package merkledb
 
 import (
+	"testing"
+
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/maybe"
-	"testing"
 
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +77,8 @@ func TestReadNodeFromDisk(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	disk, err := newRawDisk(dir)
+	disk, err := newRawDisk(dir, DefaultHasher, BranchFactorToTokenSize[BranchFactor16])
+	r.NoError(err)
 
 	branchNodeBytes := encodeDiskBranchNode(branchNode)
 	err = disk.writeDiskAtNode(0, branchNodeBytes)
@@ -86,9 +88,9 @@ func TestReadNodeFromDisk(t *testing.T) {
 		offset: 0,
 		size:   int64(len(branchNodeBytes)),
 	})
-	require.NoError(t, err)
+	r.NoError(err)
 
-	require.Equal(t, branchNode, branchNodeFromDisk)
+	r.Equal(branchNode, branchNodeFromDisk)
 }
 
 //
