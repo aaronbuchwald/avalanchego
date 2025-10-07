@@ -16,12 +16,12 @@ type Server struct {
 	router *mux.Router
 }
 
-func NewServer(shard Shard) (*Server, error) {
+func NewServer(ctx context.Context, shard Shard) (*Server, error) {
 	s := &Server{
 		shard:  shard,
 		router: mux.NewRouter(),
 	}
-	if err := s.setupRoutes(context.Background()); err != nil {
+	if err := s.setupRoutes(ctx); err != nil {
 		return nil, fmt.Errorf("failed to setup routes: %w", err)
 	}
 	return s, nil

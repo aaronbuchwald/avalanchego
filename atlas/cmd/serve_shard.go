@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,18 +14,16 @@ import (
 
 	"github.com/ava-labs/avalanchego/atlas/evm"
 	"github.com/ava-labs/avalanchego/atlas/shard"
-	"github.com/ava-labs/avalanchego/atlas/vm"
 	"github.com/ava-labs/avalanchego/tests"
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"go.uber.org/zap"
 
 	"github.com/spf13/cobra"
 )
 
 const (
-	stateDirFlag   = "state-dir"
-	portFlag       = "port"
-	startBlockFlag = "start-block"
-	endBlockFlag   = "end-block"
+	stateDirFlag = "state-dir"
+	portFlag     = "port"
 )
 
 // serveShardCmd represents the serveShard command
@@ -41,8 +38,6 @@ func init() {
 
 	serveShardCmd.PersistentFlags().String(stateDirFlag, "", "The directory to store the state of the shard")
 	serveShardCmd.PersistentFlags().Int(portFlag, 0, "The port to serve the shard on")
-	serveShardCmd.PersistentFlags().Uint64(startBlockFlag, 0, "The start block of the shard")
-	serveShardCmd.PersistentFlags().Uint64(endBlockFlag, math.MaxUint64, "The end block of the shard")
 }
 
 func runServeShard(cmd *cobra.Command, args []string) error {
@@ -54,23 +49,23 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get port: %w", err)
 	}
-	startBlock, err := cmd.PersistentFlags().GetUint64(startBlockFlag)
-	if err != nil {
-		return fmt.Errorf("failed to get start block: %w", err)
-	}
-	endBlock, err := cmd.PersistentFlags().GetUint64(endBlockFlag)
-	if err != nil {
-		return fmt.Errorf("failed to get end block: %w", err)
-	}
+
 	log := tests.NewDefaultLogger("evm-shard")
-	cChainVM, cleanup, err := evm.New(context.Background(), log, stateDir)
+	ctx, cancel := contextWithSignals(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	return serveShard(ctx, log, stateDir, port)
+}
+
+// serveShard creates and runs a shard server until the context is cancelled
+func serveShard(ctx context.Context, log logging.Logger, stateDir string, port int) error {
+	cChainVM, err := evm.New(ctx, log, stateDir)
 	if err != nil {
 		return fmt.Errorf("failed to create VM: %w", err)
 	}
-	defer cleanup()
+	defer cChainVM.Shutdown(ctx)
 
-	vmShard := vm.NewVMShardAdapter(cChainVM, startBlock, endBlock)
-	shardServer, err := shard.NewServer(vmShard)
+	shardServer, err := shard.NewServer(ctx, cChainVM)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
@@ -80,27 +75,20 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 		Handler: shardServer,
 	}
 
-	// Channel to listen for interrupt signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
 	// Channel to signal server shutdown is complete
 	shutdownDone := make(chan struct{})
 
 	go func() {
-		<-sigCh
+		<-ctx.Done()
 		// Attempt graceful shutdown
-		log.Info("interrupt signal received, shutting down VM and HTTP server")
+		log.Info("Shutting down HTTP server and VM...")
+
 		// Shutdown the HTTP server, allowing active requests to complete
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		if err := httpServer.Shutdown(ctx); err != nil {
 			log.Error("failed to shutdown HTTP server gracefully", zap.Error(err))
-		}
-
-		if err := cChainVM.Shutdown(context.Background()); err != nil {
-			log.Error("failed to shutdown VM", zap.Error(err))
 		}
 
 		close(shutdownDone)
@@ -114,4 +102,25 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 	// Wait for shutdown to complete if triggered
 	<-shutdownDone
 	return nil
+}
+
+// contextWithSignals returns a context and cancellation function where the context is cancelled
+// when any of the provided signals are received.
+func contextWithSignals(ctx context.Context, sig ...os.Signal) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, sig...)
+
+	go func() {
+		defer cancel()
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigCh:
+			return
+		}
+	}()
+
+	return ctx, cancel
 }

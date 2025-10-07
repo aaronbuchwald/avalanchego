@@ -6,15 +6,12 @@ package shard
 import (
 	"context"
 	"net/http"
-
-	"github.com/ava-labs/avalanchego/api/health"
 )
 
 type ReadShard interface {
-	health.Checker
-
+	Shutdown(ctx context.Context) error
 	CreateHandlers(ctx context.Context) (map[string]http.Handler, error)
-	GetAvailableRange() (uint64, uint64, error)
+	// TODO: add way for shards to advertise available range
 }
 
 type WriteShard interface {

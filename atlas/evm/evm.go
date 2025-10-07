@@ -1,3 +1,6 @@
+// Copyright (C) 2019-2025, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package evm
 
 import (
@@ -42,7 +45,7 @@ func init() {
 	evm.RegisterAllLibEVMExtras()
 }
 
-type VMParams struct {
+type vmParams struct {
 	vmAndSharedMemoryDB database.Database
 	chainDataDir        string
 	configBytes         []byte
@@ -50,7 +53,7 @@ type VMParams struct {
 	meterVMRegistry     prometheus.Registerer
 }
 
-func NewVMParams(log logging.Logger, currentStateDir string, configBytes []byte) (*VMParams, func() error, error) {
+func newVMParams(log logging.Logger, currentStateDir string, configBytes []byte) (*vmParams, func() error, error) {
 	// Create the prefix gatherer passed to the VM and register it with the top-level,
 	// labeled gatherer.
 	prefixGatherer := metrics.NewPrefixGatherer()
@@ -72,10 +75,10 @@ func NewVMParams(log logging.Logger, currentStateDir string, configBytes []byte)
 		return nil, nil, fmt.Errorf("failed to register consensusRegistry: %w", err)
 	}
 
-	// TODO: optionally collect metrics
-	// if metricsEnabled {
-	// 	collectRegistry(b, log, "c-chain-reexecution", prefixGatherer, labels)
-	// }
+	// TODO: provide a way to handle the registry. Normally this is orchestrated by AvalancheGo
+	// and retrievable from the AvalancheGo Metrics API.
+	// By running externally, we lose the metrics server, continuous profiling, and possibly other
+	// services normally handled by AvalancheGo and worth replicating for VMs running externally.
 
 	var (
 		vmDBDir      = filepath.Join(currentStateDir, "db")
@@ -86,7 +89,7 @@ func NewVMParams(log logging.Logger, currentStateDir string, configBytes []byte)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create DB: %w", err)
 	}
-	return &VMParams{
+	return &vmParams{
 		vmAndSharedMemoryDB: db,
 		chainDataDir:        chainDataDir,
 		configBytes:         configBytes,
@@ -95,9 +98,9 @@ func NewVMParams(log logging.Logger, currentStateDir string, configBytes []byte)
 	}, db.Close, nil
 }
 
-func NewFromParams(
+func newFromParams(
 	ctx context.Context,
-	params *VMParams,
+	params *vmParams,
 ) (block.ChainVM, error) {
 	factory := factory.Factory{}
 	vmIntf, err := factory.New(logging.NoLog{})
@@ -172,16 +175,16 @@ func NewFromParams(
 	return vm, nil
 }
 
-func New(
+func newVM(
 	ctx context.Context,
 	log logging.Logger,
 	currentStateDir string,
 ) (block.ChainVM, func() error, error) {
-	params, close, err := NewVMParams(log, currentStateDir, configBytes)
+	params, close, err := newVMParams(log, currentStateDir, configBytes)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create VM params: %w", err)
 	}
-	vm, err := NewFromParams(ctx, params)
+	vm, err := newFromParams(ctx, params)
 	if err != nil {
 		close()
 		return nil, nil, fmt.Errorf("failed to create VM: %w", err)
