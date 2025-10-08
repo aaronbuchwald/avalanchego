@@ -14,7 +14,16 @@ import (
 	"github.com/ava-labs/avalanchego/utils/logging"
 )
 
-var _ shard.Shard = (*vmShardAdapter)(nil)
+var (
+	_               shard.Shard        = (*vmShardAdapter)(nil)
+	EVMShardFactory shard.ShardFactory = &vmShardFactory{}
+)
+
+type vmShardFactory struct{}
+
+func (f *vmShardFactory) New(ctx context.Context, log logging.Logger, stateDir string) (shard.Shard, error) {
+	return New(ctx, log, stateDir)
+}
 
 type vmShardAdapter struct {
 	vm      block.ChainVM

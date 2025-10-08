@@ -6,7 +6,13 @@ package shard
 import (
 	"context"
 	"net/http"
+
+	"github.com/ava-labs/avalanchego/utils/logging"
 )
+
+type ShardFactory interface {
+	New(ctx context.Context, log logging.Logger, stateDir string) (Shard, error)
+}
 
 type ReadShard interface {
 	Shutdown(ctx context.Context) error

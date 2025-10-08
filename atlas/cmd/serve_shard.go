@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ava-labs/avalanchego/atlas/evm"
 	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/avalanchego/tests"
 	"github.com/ava-labs/avalanchego/utils/logging"
@@ -59,13 +58,13 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 
 // serveShard creates and runs a shard server until the context is cancelled
 func serveShard(ctx context.Context, log logging.Logger, stateDir string, port int) error {
-	cChainVM, err := evm.New(ctx, log, stateDir)
+	readShard, err := shardFactory.New(ctx, log, stateDir)
 	if err != nil {
 		return fmt.Errorf("failed to create VM: %w", err)
 	}
-	defer cChainVM.Shutdown(ctx)
+	defer readShard.Shutdown(ctx)
 
-	shardServer, err := shard.NewServer(ctx, cChainVM)
+	shardServer, err := shard.NewServer(ctx, readShard)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}

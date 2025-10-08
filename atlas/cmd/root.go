@@ -7,11 +7,16 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ava-labs/avalanchego/atlas/evm"
+	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
+var (
+	cfgFile      string
+	shardFactory shard.ShardFactory = evm.EVMShardFactory
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
