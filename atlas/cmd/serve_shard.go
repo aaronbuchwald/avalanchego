@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanchego/atlas/shard"
-	"github.com/ava-labs/avalanchego/tests"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"go.uber.org/zap"
 
@@ -23,6 +22,7 @@ import (
 const (
 	stateDirFlag = "state-dir"
 	portFlag     = "port"
+	logLevelFlag = "log-level"
 )
 
 // serveShardCmd represents the serveShard command
@@ -37,6 +37,7 @@ func init() {
 
 	serveShardCmd.PersistentFlags().String(stateDirFlag, "", "The directory to store the state of the shard")
 	serveShardCmd.PersistentFlags().Int(portFlag, 0, "The port to serve the shard on")
+	serveShardCmd.PersistentFlags().String(logLevelFlag, "info", "The log level to use")
 }
 
 func runServeShard(cmd *cobra.Command, args []string) error {
@@ -48,33 +49,33 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get port: %w", err)
 	}
+	if err := initLogger(cmd); err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
 
-	log := tests.NewDefaultLogger("evm-shard")
 	ctx, cancel := contextWithSignals(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	return serveShard(ctx, log, stateDir, port)
-}
-
-// serveShard creates and runs a shard server until the context is cancelled
-func serveShard(ctx context.Context, log logging.Logger, stateDir string, port int) error {
 	readShard, err := shardFactory.New(ctx, log, stateDir)
 	if err != nil {
 		return fmt.Errorf("failed to create VM: %w", err)
 	}
 	defer readShard.Shutdown(ctx)
 
+	return serveShard(ctx, log, readShard, port)
+}
+
+// serveShard creates a server to serve API endpoints from readShard and blocks until the context is cancelled
+func serveShard(ctx context.Context, log logging.Logger, readShard shard.Shard, port int) error {
 	shardServer, err := shard.NewServer(ctx, readShard)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
-	// create the http server
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: shardServer,
 	}
 
-	// Channel to signal server shutdown is complete
 	shutdownDone := make(chan struct{})
 
 	go func() {

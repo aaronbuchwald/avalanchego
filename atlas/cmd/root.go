@@ -9,6 +9,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/atlas/evm"
 	"github.com/ava-labs/avalanchego/atlas/shard"
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -16,6 +17,7 @@ import (
 var (
 	cfgFile      string
 	shardFactory shard.ShardFactory = evm.EVMShardFactory
+	log          logging.Logger
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -60,4 +62,24 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
+}
+
+func initLogger(cmd *cobra.Command) error {
+	logLevelStr, err := cmd.PersistentFlags().GetString(logLevelFlag)
+	if err != nil {
+		return fmt.Errorf("failed to get log level: %w", err)
+	}
+	logLevel, err := logging.ToLevel(logLevelStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse log level: %w", err)
+	}
+	log = logging.NewLogger(
+		"atlas",
+		logging.NewWrappedCore(
+			logLevel,
+			os.Stdout,
+			logging.Colors.ConsoleEncoder(),
+		),
+	)
+	return nil
 }
