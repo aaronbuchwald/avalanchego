@@ -7,16 +7,18 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/gorilla/mux"
 )
 
 type Server struct {
-	shard  Shard
+	shard  ReadShard
 	router *mux.Router
 }
 
-func NewServer(ctx context.Context, shard Shard) (*Server, error) {
+func NewServer(ctx context.Context, shard ReadShard) (*Server, error) {
 	s := &Server{
 		shard:  shard,
 		router: mux.NewRouter(),
@@ -42,4 +44,42 @@ func (s *Server) setupRoutes(ctx context.Context) error {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
+}
+
+func ServeShard(ctx context.Context, log logging.Logger, port int, shard ReadShard) error {
+	shardServer, err := NewServer(ctx, shard)
+	if err != nil {
+		return fmt.Errorf("failed to create server: %w", err)
+	}
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: shardServer,
+	}
+
+	shutdownDone := make(chan error)
+
+	go func() {
+		<-ctx.Done()
+		// Attempt graceful shutdown
+		log.Info("Shutting down HTTP server...")
+
+		// Shutdown the HTTP server, allowing active requests to complete
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := httpServer.Shutdown(ctx); err != nil {
+			shutdownDone <- fmt.Errorf("failed to shutdown HTTP server gracefully: %w", err)
+		}
+		log.Info("Finished shutting down shard HTTP server")
+
+		close(shutdownDone)
+	}()
+
+	// Start the HTTP server
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("HTTP server failed: %w", err)
+	}
+
+	// Wait for shutdown to complete if triggered
+	return <-shutdownDone
 }

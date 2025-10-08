@@ -6,15 +6,11 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/ava-labs/avalanchego/atlas/shard"
-	"github.com/ava-labs/avalanchego/utils/logging"
-	"go.uber.org/zap"
 
 	"github.com/spf13/cobra"
 )
@@ -66,46 +62,7 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 	}
 	defer readShard.Shutdown(ctx)
 
-	return serveShard(ctx, log, readShard, port)
-}
-
-// serveShard creates a server to serve API endpoints from readShard and blocks until the context is cancelled
-func serveShard(ctx context.Context, log logging.Logger, readShard shard.Shard, port int) error {
-	shardServer, err := shard.NewServer(ctx, readShard)
-	if err != nil {
-		return fmt.Errorf("failed to create server: %w", err)
-	}
-	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: shardServer,
-	}
-
-	shutdownDone := make(chan struct{})
-
-	go func() {
-		<-ctx.Done()
-		// Attempt graceful shutdown
-		log.Info("Shutting down HTTP server and VM...")
-
-		// Shutdown the HTTP server, allowing active requests to complete
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := httpServer.Shutdown(ctx); err != nil {
-			log.Error("failed to shutdown HTTP server gracefully", zap.Error(err))
-		}
-
-		close(shutdownDone)
-	}()
-
-	// Start the HTTP server
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("HTTP server failed: %w", err)
-	}
-
-	// Wait for shutdown to complete if triggered
-	<-shutdownDone
-	return nil
+	return shard.ServeShard(ctx, log, port, readShard)
 }
 
 // contextWithDefaultSignals returns a context and cancellation function where the context is cancelled

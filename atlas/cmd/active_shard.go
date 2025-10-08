@@ -10,11 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 
-	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
 	"github.com/ava-labs/avalanchego/atlas/shard"
-	"github.com/ava-labs/avalanchego/vms/rpcchainvm/grpcutils"
 )
 
 const (
@@ -72,30 +69,12 @@ func runActiveShard(cmd *cobra.Command, args []string) error {
 
 	eg := errgroup.Group{}
 	eg.Go(func() error {
-		serveGRPCShard(ctx, grpcListener, activeShard)
+		shard.ServeGRPCShard(ctx, grpcListener, activeShard)
 		return nil
 	})
 	eg.Go(func() error {
-		serveShard(ctx, log, activeShard, port)
+		shard.ServeShard(ctx, log, port, activeShard)
 		return nil
 	})
 	return eg.Wait()
-}
-
-func serveGRPCShard(ctx context.Context, listener net.Listener, s shard.WriteShard) {
-	shardServer := shard.NewGRPCShardServer(s)
-	grpcServer := grpc.NewServer()
-	pb.RegisterWriteShardServer(grpcServer, shardServer)
-
-	go func() {
-		defer func() {
-			grpcServer.GracefulStop()
-			log.Info("gRPC shard server completed graceful shutdown")
-		}()
-
-		<-ctx.Done()
-		log.Info("Shutting down gRPC shard server...")
-	}()
-
-	grpcutils.Serve(listener, grpcServer)
 }
