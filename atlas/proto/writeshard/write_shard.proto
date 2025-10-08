@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package writeshard;
+
+option go_package = "github.com/ava-labs/avalanchego/atlas/proto/writeshard";
+
+service WriteShard {
+  rpc ExecuteBlock(ExecuteBlockRequest) returns (ExecuteBlockResponse);
+}
+
+message ExecuteBlockRequest {
+  bytes block_bytes = 1;
+}
+
+message ExecuteBlockResponse {}

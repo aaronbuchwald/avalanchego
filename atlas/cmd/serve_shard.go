@@ -35,9 +35,13 @@ var serveShardCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(serveShardCmd)
 
-	serveShardCmd.PersistentFlags().String(stateDirFlag, "", "The directory to store the state of the shard")
-	serveShardCmd.PersistentFlags().Int(portFlag, 0, "The port to serve the shard on")
 	serveShardCmd.PersistentFlags().String(logLevelFlag, "info", "The log level to use")
+	registerServeShardFlags(serveShardCmd)
+}
+
+func registerServeShardFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().String(stateDirFlag, "", "The directory to store the state of the shard")
+	cmd.PersistentFlags().Int(portFlag, 0, "The port to serve the shard on")
 }
 
 func runServeShard(cmd *cobra.Command, args []string) error {
