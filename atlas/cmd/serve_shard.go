@@ -53,7 +53,7 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
-	ctx, cancel := contextWithSignals(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := contextWithDefaultSignals(context.Background())
 	defer cancel()
 
 	readShard, err := shardFactory.New(ctx, log, stateDir)
@@ -102,6 +102,12 @@ func serveShard(ctx context.Context, log logging.Logger, readShard shard.Shard, 
 	// Wait for shutdown to complete if triggered
 	<-shutdownDone
 	return nil
+}
+
+// contextWithDefaultSignals returns a context and cancellation function where the context is cancelled
+// when SIGINT or SIGTERM are received.
+func contextWithDefaultSignals(ctx context.Context) (context.Context, context.CancelFunc) {
+	return contextWithSignals(ctx, syscall.SIGINT, syscall.SIGTERM)
 }
 
 // contextWithSignals returns a context and cancellation function where the context is cancelled
