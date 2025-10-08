@@ -40,14 +40,22 @@ func registerServeShardFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Int(portFlag, 0, "The port to serve the shard on")
 }
 
-func runServeShard(cmd *cobra.Command, args []string) error {
-	stateDir, err := cmd.PersistentFlags().GetString(stateDirFlag)
+func getServeShardFlags(cmd *cobra.Command) (stateDir string, port int, err error) {
+	stateDir, err = cmd.PersistentFlags().GetString(stateDirFlag)
 	if err != nil {
-		return fmt.Errorf("failed to get state directory: %w", err)
+		return "", 0, fmt.Errorf("failed to get state directory: %w", err)
 	}
-	port, err := cmd.PersistentFlags().GetInt(portFlag)
+	port, err = cmd.PersistentFlags().GetInt(portFlag)
 	if err != nil {
-		return fmt.Errorf("failed to get port: %w", err)
+		return "", 0, fmt.Errorf("failed to get port: %w", err)
+	}
+	return stateDir, port, nil
+}
+
+func runServeShard(cmd *cobra.Command, args []string) error {
+	stateDir, port, err := getServeShardFlags(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to get serve shard flags: %w", err)
 	}
 	if err := initLogger(cmd); err != nil {
 		return fmt.Errorf("failed to initialize logger: %w", err)

@@ -36,17 +36,25 @@ func registerActiveShardFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Int(grpcServerPortFlag, 9000, "The port to serve the gRPC server on")
 }
 
+func getActiveShardFlags(cmd *cobra.Command) (grpcServerPort int, err error) {
+	grpcServerPort, err = cmd.PersistentFlags().GetInt(grpcServerPortFlag)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get gRPC server port: %w", err)
+	}
+	return grpcServerPort, nil
+}
+
 func runActiveShard(cmd *cobra.Command, args []string) error {
-	stateDir, err := cmd.PersistentFlags().GetString(stateDirFlag)
+	stateDir, port, err := getServeShardFlags(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to get state directory: %w", err)
 	}
-	port, err := cmd.PersistentFlags().GetInt(portFlag)
-	if err != nil {
-		return fmt.Errorf("failed to get port: %w", err)
-	}
 	if err := initLogger(cmd); err != nil {
 		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	grpcPort, err := getActiveShardFlags(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to get gRPC server port: %w", err)
 	}
 
 	ctx, cancel := contextWithDefaultSignals(context.Background())
@@ -58,13 +66,9 @@ func runActiveShard(cmd *cobra.Command, args []string) error {
 	}
 	defer activeShard.Shutdown(ctx)
 
-	grpcPort, err := cmd.PersistentFlags().GetInt(grpcServerPortFlag)
-	if err != nil {
-		return fmt.Errorf("failed to get gRPC server port: %w", err)
-	}
 	grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
-		return fmt.Errorf("failed to listen on gRPC server port %d: %w", port, err)
+		return fmt.Errorf("failed to listen on gRPC server port %d: %w", grpcPort, err)
 	}
 
 	eg := errgroup.Group{}
