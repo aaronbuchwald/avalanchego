@@ -4,8 +4,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/ava-labs/avalanchego/atlas/evm"
 	"github.com/ava-labs/avalanchego/atlas/shard"
@@ -82,4 +85,31 @@ func initLogger(cmd *cobra.Command) error {
 		),
 	)
 	return nil
+}
+
+// contextWithDefaultSignals returns a context and cancellation function where the context is cancelled
+// when SIGINT or SIGTERM are received.
+func contextWithDefaultSignals(ctx context.Context) (context.Context, context.CancelFunc) {
+	return contextWithSignals(ctx, syscall.SIGINT, syscall.SIGTERM)
+}
+
+// contextWithSignals returns a context and cancellation function where the context is cancelled
+// when any of the provided signals are received.
+func contextWithSignals(ctx context.Context, sig ...os.Signal) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, sig...)
+
+	go func() {
+		defer cancel()
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigCh:
+			return
+		}
+	}()
+
+	return ctx, cancel
 }

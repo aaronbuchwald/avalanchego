@@ -77,8 +77,7 @@ func runActiveShard(cmd *cobra.Command, args []string) error {
 		return nil
 	})
 	eg.Go(func() error {
-		shard.ServeShard(ctx, log, port, activeShard)
-		return nil
+		return shard.ServeShard(ctx, log, port, activeShard)
 	})
 	return eg.Wait()
 }

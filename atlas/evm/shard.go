@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	_               shard.Shard        = (*vmShardAdapter)(nil)
+	_               shard.Shard        = (*vmShard)(nil)
 	EVMShardFactory shard.ShardFactory = &vmShardFactory{}
 )
 
@@ -25,13 +25,13 @@ func (f *vmShardFactory) New(ctx context.Context, log logging.Logger, stateDir s
 	return New(ctx, log, stateDir)
 }
 
-type vmShardAdapter struct {
+type vmShard struct {
 	vm      block.ChainVM
 	closeDB func() error
 }
 
-func newAdapter(vm block.ChainVM) *vmShardAdapter {
-	shard := &vmShardAdapter{vm: vm}
+func newAdapter(vm block.ChainVM) *vmShard {
+	shard := &vmShard{vm: vm}
 	return shard
 }
 
@@ -39,7 +39,7 @@ func New(
 	ctx context.Context,
 	log logging.Logger,
 	currentStateDir string,
-) (shard.Shard, error) {
+) (*vmShard, error) {
 	params, close, err := newVMParams(log, currentStateDir, configBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VM params: %w", err)
@@ -49,14 +49,14 @@ func New(
 		close()
 		return nil, fmt.Errorf("failed to create VM: %w", err)
 	}
-	return &vmShardAdapter{vm: vm, closeDB: close}, nil
+	return &vmShard{vm: vm, closeDB: close}, nil
 }
 
-func (v *vmShardAdapter) CreateHandlers(ctx context.Context) (map[string]http.Handler, error) {
+func (v *vmShard) CreateHandlers(ctx context.Context) (map[string]http.Handler, error) {
 	return v.vm.CreateHandlers(ctx)
 }
 
-func (v *vmShardAdapter) ExecuteBlock(ctx context.Context, blockBytes []byte) error {
+func (v *vmShard) ExecuteBlock(ctx context.Context, blockBytes []byte) error {
 	blk, err := v.vm.ParseBlock(ctx, blockBytes)
 	if err != nil {
 		return fmt.Errorf("failed to parse block: %w", err)
@@ -70,7 +70,7 @@ func (v *vmShardAdapter) ExecuteBlock(ctx context.Context, blockBytes []byte) er
 	return nil
 }
 
-func (v *vmShardAdapter) Shutdown(ctx context.Context) error {
+func (v *vmShard) Shutdown(ctx context.Context) error {
 	return errors.Join(
 		v.vm.Shutdown(ctx),
 		v.closeDB(),
