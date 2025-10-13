@@ -1,0 +1,32 @@
+{
+    "ethereum.BlockNumberReader": [
+        {
+            "eth_blockNumber": {
+                "heightAssignment": "latest"
+            }
+        }
+    ],
+    "ethereum.ChainReader": [
+        {
+            "eth_getBlockByHash": {
+                "heightAssignment": "sharded",
+                "argumentPosition": 0,
+                "argumentType": "hash"
+            }
+        },
+        {
+            "eth_getBlockByNumber": {
+                "heightAssignment": "sharded",
+                "argumentPosition": 0,
+                "argumentType": "bigInt"
+            }
+        },
+        {
+            "eth_getBlockByHash": {
+                "heightAssignment": "sharded",
+                "argumentPosition": 0,
+                "argumentType": "bigInt"
+            }
+        }
+    ]
+}
