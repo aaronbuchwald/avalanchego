@@ -12,12 +12,16 @@ import (
 	"net/http"
 
 	"github.com/ava-labs/avalanchego/utils/logging"
-	"github.com/ava-labs/coreth/rpc"
+	"github.com/ava-labs/libevm/common/hexutil"
 )
 
 var (
 	_               http.Handler = (*Router)(nil)
 	errNoShardFound              = errors.New("no shard found for height")
+	// mapping from method name to the corresponding index of the height parameter
+	methodToHeightParamIndex = map[string]int{
+		"eth_getBlockByNumber": 0,
+	}
 )
 
 // TODO: make boundaries dynamic to support active + archival process w/o restart
@@ -38,43 +42,68 @@ type Router struct {
 	shards []*APIShard
 }
 
-func NewRouter(shards []*APIShard) *Router {
+// routerOptions holds configuration for NewRouter
+type routerOptions struct {
+	logger logging.Logger
+}
+
+// RouterOption configures a Router
+type RouterOption func(*routerOptions)
+
+// WithLogger sets the logger for the router. Defaults to logging.NoLog{}.
+func WithLogger(log logging.Logger) RouterOption {
+	return func(o *routerOptions) {
+		o.logger = log
+	}
+}
+
+func NewRouter(shards []*APIShard, opts ...RouterOption) *Router {
+	// Apply default options
+	options := &routerOptions{
+		logger: logging.NoLog{},
+	}
+
+	// Apply provided options
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	return &Router{
-		log:    logging.NoLog{},
+		log:    options.logger,
 		shards: shards,
 	}
 }
 
-// paramsOnlyRequest is a struct that contains only the params field of a JSON RPC request
+// rpcRequest is a struct that contains only the params field of a JSON RPC request
 // because this is the only field from the body required to extract the height.
-type paramsOnlyRequest struct {
-	Params []interface{} `json:"params"`
+type rpcRequest struct {
+	Method string        `json:"method,omitempty"`
+	Params []interface{} `json:"params,omitempty"`
 }
 
-func extractHeightFromParams(params []interface{}) (uint64, error) {
+func extractHeightFromParams(method string, params []interface{}) (uint64, error) {
 	if len(params) == 0 {
 		return 0, errors.New("no params found")
 	}
 
-	lastParam := params[len(params)-1]
-	switch lastParam.(type) {
+	heightParamIndex, ok := methodToHeightParamIndex[method]
+	if !ok {
+		return 0, fmt.Errorf("method %s not found in methodToHeightParamIndex", method)
+	}
+	if heightParamIndex >= len(params) {
+		return 0, fmt.Errorf("method %s has no height parameter at index %d", method, heightParamIndex)
+	}
+
+	heightParam := params[heightParamIndex]
+	switch heightParam.(type) {
 	case string:
-		bnh := rpc.BlockNumberOrHash{}
-		err := bnh.UnmarshalJSON([]byte(lastParam.(string)))
+		num, err := hexutil.DecodeUint64(heightParam.(string))
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("failed to decode block number or hash from %s: %w", heightParam.(string), err)
 		}
-		blockNumber, ok := bnh.Number()
-		if !ok {
-			return 0, fmt.Errorf("invalid block number or hash %s", lastParam.(string))
-		}
-		blockNumberInt64 := blockNumber.Int64()
-		if blockNumberInt64 < 0 {
-			return 0, fmt.Errorf("special case block numbers not supported %s", lastParam.(string))
-		}
-		return uint64(blockNumberInt64), nil
+		return num, nil
 	default:
-		return 0, fmt.Errorf("invalid type for block hash or number: %T", params[len(params)-1])
+		return 0, fmt.Errorf("invalid type for block hash or number: %T ; %v", heightParam, heightParam)
 	}
 }
 
@@ -100,16 +129,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req.Body = io.NopCloser(bytes.NewReader(body))
 
 	// Unmarshal to extract params
-	var paramsReq paramsOnlyRequest
+	var paramsReq rpcRequest
 	if err := json.Unmarshal(body, &paramsReq); err != nil {
 		http.Error(w, "failed to unmarshal params: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Extract height
-	height, err := extractHeightFromParams(paramsReq.Params)
+	height, err := extractHeightFromParams(paramsReq.Method, paramsReq.Params)
 	if err != nil {
-
 		http.Error(w, "failed to extract height: "+err.Error(), http.StatusBadRequest)
 		return
 	}
