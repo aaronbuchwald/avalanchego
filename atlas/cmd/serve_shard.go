@@ -7,8 +7,9 @@ import (
 	"context"
 	"fmt"
 
+	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
+	atlashttp "github.com/ava-labs/avalanchego/atlas/http"
 	"github.com/ava-labs/avalanchego/atlas/shard"
-
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +59,7 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
-	ctx, cancel := contextWithDefaultSignals(context.Background())
+	ctx, cancel := atlascontext.WithDefaultSignals(context.Background())
 	defer cancel()
 
 	readShard, err := shardFactory.New(ctx, log, stateDir)
@@ -67,5 +68,15 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 	}
 	defer readShard.Shutdown(ctx)
 
-	return shard.ServeShard(ctx, log, port, readShard)
+	shardServer, err := shard.NewServer(ctx, readShard)
+	if err != nil {
+		return fmt.Errorf("failed to create shard server: %w", err)
+	}
+
+	return atlashttp.ServeWithContext(
+		ctx,
+		shardServer,
+		atlashttp.WithLogger(log),
+		atlashttp.WithPort(port),
+	)
 }

@@ -32,12 +32,39 @@ type shardTest struct {
 	shards  []*vmShard
 }
 
-func setupWithMultipleShards(tb testing.TB, numShards int) *shardTest {
+// readBlockData reads blocks in the range [1,20] from the blockdata directory and returns
+// them in sequential order.
+func readBlockData(tb testing.TB) [][]byte {
+	require := require.New(tb)
+
+	blocks := make([][]byte, 20)
+	for i := 1; i <= 20; i++ {
+		blockFile, err := blockDataFiles.Open(fmt.Sprintf("blockdata/%d.bin", i))
+		require.NoError(err)
+		defer blockFile.Close()
+		blockBytes, err := io.ReadAll(blockFile)
+		require.NoError(err)
+		blocks[i-1] = blockBytes
+	}
+
+	return blocks
+}
+
+// executeBlocks executes all of the blocks on the shard sequentially.
+func executeBlocks(tb testing.TB, ctx context.Context, shard shard.WriteShard, blocks [][]byte) {
+	require := require.New(tb)
+	for _, blockBytes := range blocks {
+		require.NoError(shard.ExecuteBlock(ctx, blockBytes))
+	}
+}
+
+func setupWithMultipleShards(tb testing.TB, endBlocks []uint64) *shardTest {
 	require := require.New(tb)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	shards := make([]*vmShard, numShards)
-	for i := 0; i < numShards; i++ {
+	blocks := readBlockData(tb)
+	shards := make([]*vmShard, len(endBlocks))
+	for i, endBlock := range endBlocks {
 		log := tests.NewDefaultLogger("test-evm-shard")
 		var err error
 		evmShard, err := New(ctx, log, tb.TempDir())
@@ -47,6 +74,8 @@ func setupWithMultipleShards(tb testing.TB, numShards int) *shardTest {
 			require.NoError(evmShard.Shutdown(ctx))
 		})
 		shards[i] = evmShard
+
+		executeBlocks(tb, ctx, evmShard, blocks[:endBlock])
 	}
 
 	return &shardTest{
@@ -58,7 +87,7 @@ func setupWithMultipleShards(tb testing.TB, numShards int) *shardTest {
 }
 
 func setup(tb testing.TB) *shardTest {
-	return setupWithMultipleShards(tb, 1)
+	return setupWithMultipleShards(tb, []uint64{0}) // Create a single shard at genesis
 }
 
 func TestReadShard(t *testing.T) {
@@ -72,11 +101,11 @@ func TestReadShard(t *testing.T) {
 	testServer := httptest.NewServer(shardServer)
 	defer testServer.Close()
 
-	ethClient, err := ethclient.Dial(testServer.URL + "/rpc")
+	client, err := ethclient.Dial(testServer.URL + "/rpc")
 	require.NoError(err)
-	defer ethClient.Close()
+	defer client.Close()
 
-	blockNumber, err := ethClient.BlockNumber(ctx)
+	blockNumber, err := client.BlockNumber(ctx)
 	require.NoError(err)
 	require.Equal(blockNumber, uint64(0))
 }
@@ -98,11 +127,11 @@ func TestActiveShard(t *testing.T) {
 
 	go shard.ServeGRPCShard(ctx, listener, vmShard)
 
-	ethClient, err := ethclient.Dial(testServer.URL + "/rpc")
+	client, err := ethclient.Dial(testServer.URL + "/rpc")
 	require.NoError(err)
-	defer ethClient.Close()
+	defer client.Close()
 
-	blockNumber, err := ethClient.BlockNumber(ctx)
+	blockNumber, err := client.BlockNumber(ctx)
 	require.NoError(err)
 	require.Equal(blockNumber, uint64(0))
 
@@ -125,35 +154,18 @@ func TestActiveShard(t *testing.T) {
 		})
 		require.NoError(err)
 
-		blockNumber, err = ethClient.BlockNumber(ctx)
+		blockNumber, err = client.BlockNumber(ctx)
 		require.NoError(err)
 		require.Equal(blockNumber, uint64(i))
 	}
 }
 
-func TestReadShards(t *testing.T) {
-	shardTest := setupWithMultipleShards(t, 2)
+func TestReadShardsManual(t *testing.T) {
+	shard0Tip, shard1Tip := uint64(10), uint64(20)
+	tip := shard1Tip
+	shardTest := setupWithMultipleShards(t, []uint64{shard0Tip, shard1Tip})
 	require, ctx, cancel, shard0, shard1 := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0], shardTest.shards[1]
 	defer cancel()
-
-	tip := uint64(20)
-	shard0Tip, shard1Tip := tip/2, tip
-
-	for i := uint64(1); i < tip; i++ {
-		blockFile, err := blockDataFiles.Open(fmt.Sprintf("blockdata/%d.bin", i))
-		require.NoError(err)
-		defer blockFile.Close()
-
-		blockBytes, err := io.ReadAll(blockFile)
-		require.NoError(err)
-
-		if i < shard0Tip {
-			require.NoError(shard0.ExecuteBlock(ctx, blockBytes))
-		}
-		if i < shard1Tip {
-			require.NoError(shard1.ExecuteBlock(ctx, blockBytes))
-		}
-	}
 
 	shard0Server, err := shard.NewServer(shardTest.ctx, shard0)
 	require.NoError(err)
@@ -176,7 +188,8 @@ func TestReadShards(t *testing.T) {
 	defer shard1Client.Close()
 
 	for i := uint64(1); i < tip; i++ {
-		if i < shard0Tip {
+		// Confirm expected behavior for shard0 (include blocks <= shard0Tip, exclude blocks > shard0Tip)
+		if i <= shard0Tip {
 			block, err := shard0Client.BlockByNumber(ctx, big.NewInt(int64(i)))
 			require.NoError(err)
 			require.Equal(block.NumberU64(), i)
@@ -185,10 +198,57 @@ func TestReadShards(t *testing.T) {
 			require.ErrorContains(err, "cannot query unfinalized data")
 			require.Nil(block)
 		}
-		if i < shard1Tip {
+		// Confirm expected behavior for shard1 (include all blocks <= shard1Tip)
+		if i <= shard1Tip {
 			block, err := shard1Client.BlockByNumber(ctx, big.NewInt(int64(i)))
 			require.NoError(err)
 			require.Equal(block.NumberU64(), i)
 		}
+	}
+}
+
+func TestReadShardsWithRouter(t *testing.T) {
+	shard0Tip, shard1Tip := uint64(10), uint64(20)
+	tip := shard1Tip
+	shardTest := setupWithMultipleShards(t, []uint64{shard0Tip, shard1Tip})
+	require, ctx, cancel, shard0, shard1 := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0], shardTest.shards[1]
+	defer cancel()
+
+	shard0Server, err := shard.NewServer(shardTest.ctx, shard0)
+	require.NoError(err)
+
+	shard0TestServer := httptest.NewServer(shard0Server)
+	defer shard0TestServer.Close()
+
+	shard1Server, err := shard.NewServer(shardTest.ctx, shard1)
+	require.NoError(err)
+
+	shard1TestServer := httptest.NewServer(shard1Server)
+	defer shard1TestServer.Close()
+
+	router := NewRouter([]*APIShard{
+		{
+			Endpoint: shard0TestServer.URL + "/rpc",
+			Start:    0,
+			End:      shard0Tip,
+		},
+		{
+			Endpoint: shard1TestServer.URL + "/rpc",
+			Start:    shard0Tip,
+			End:      shard1Tip,
+		},
+	})
+
+	routerTestServer := httptest.NewServer(router)
+	defer routerTestServer.Close()
+
+	client, err := ethclient.Dial(routerTestServer.URL + "/rpc")
+	require.NoError(err)
+	defer client.Close()
+
+	for i := uint64(1); i < tip; i++ {
+		block, err := client.BlockByNumber(ctx, big.NewInt(int64(i)))
+		require.NoError(err)
+		require.Equal(block.NumberU64(), i)
 	}
 }

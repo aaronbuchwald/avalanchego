@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"time"
 
+	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
 	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
 	"github.com/ava-labs/coreth/ethclient"
 	"github.com/ava-labs/libevm/rlp"
@@ -64,7 +65,7 @@ func runBlockRelay(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get block relay flags: %w", err)
 	}
 
-	ctx, cancel := contextWithDefaultSignals(context.Background())
+	ctx, cancel := atlascontext.WithDefaultSignals(context.Background())
 	defer cancel()
 
 	return serveBlockRelay(ctx, lastAcceptedBlock, websocketEndpoint, activeShardAddress)

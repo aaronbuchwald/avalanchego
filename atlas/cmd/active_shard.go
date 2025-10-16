@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"net"
 
+	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
+	atlashttp "github.com/ava-labs/avalanchego/atlas/http"
+	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/ava-labs/avalanchego/atlas/shard"
 )
 
 const (
@@ -57,7 +58,7 @@ func runActiveShard(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get gRPC server port: %w", err)
 	}
 
-	ctx, cancel := contextWithDefaultSignals(context.Background())
+	ctx, cancel := atlascontext.WithDefaultSignals(context.Background())
 	defer cancel()
 
 	activeShard, err := shardFactory.New(ctx, log, stateDir)
@@ -65,6 +66,11 @@ func runActiveShard(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create VM: %w", err)
 	}
 	defer activeShard.Shutdown(ctx)
+
+	shardServer, err := shard.NewServer(ctx, activeShard)
+	if err != nil {
+		return fmt.Errorf("failed to create shard server: %w", err)
+	}
 
 	grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
@@ -77,7 +83,12 @@ func runActiveShard(cmd *cobra.Command, args []string) error {
 		return nil
 	})
 	eg.Go(func() error {
-		return shard.ServeShard(ctx, log, port, activeShard)
+		return atlashttp.ServeWithContext(
+			ctx,
+			shardServer,
+			atlashttp.WithLogger(log),
+			atlashttp.WithPort(port),
+		)
 	})
 	return eg.Wait()
 }

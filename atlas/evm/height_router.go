@@ -11,12 +11,20 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/coreth/rpc"
 )
 
-type apiShard struct {
-	start, end uint64
-	endpoint   string
+var (
+	_               http.Handler = (*Router)(nil)
+	errNoShardFound              = errors.New("no shard found for height")
+)
+
+// TODO: make boundaries dynamic to support active + archival process w/o restart
+type APIShard struct {
+	Start    uint64 // Start block of the shard's range. Never changes.
+	End      uint64 // End block of the shard's range. 0 indicates the shard is active and contains Start to tip.
+	Endpoint string
 }
 
 // Atlas assumes that it only handles queries that access state at a specific height. All other queries can be handled without
@@ -24,11 +32,17 @@ type apiShard struct {
 // To that end, all such queries use their last parameter in the standard Ethereum JSON RPC calls to encode either a block hash
 // or number, so we decode that parameter, perform the request on the required shard, and relay it to the client.
 // Atlas could include a separate class internally to handle such requests and perhaps should to provide a complete Ethereum JSON RPC
-// interface, but for now we handle he hard part (archival storage) and defer handling completeness.
-// Run tests with eth_getTransactionCount and a local network with a single issuer, such that for block N the nonce should be N
-// and all other state accessing queries should be expected to work similarly.
+// interface, but for now we handle the hard part (archival storage) and defer a complete RPC interface implementation.
 type Router struct {
-	shards []*apiShard
+	log    logging.Logger
+	shards []*APIShard
+}
+
+func NewRouter(shards []*APIShard) *Router {
+	return &Router{
+		log:    logging.NoLog{},
+		shards: shards,
+	}
 }
 
 // paramsOnlyRequest is a struct that contains only the params field of a JSON RPC request
@@ -65,9 +79,9 @@ func extractHeightFromParams(params []interface{}) (uint64, error) {
 }
 
 // findShard returns the first shard that contains height or nil of no such shard exists
-func findShard(height uint64, shards []*apiShard) *apiShard {
+func findShard(height uint64, shards []*APIShard) *APIShard {
 	for _, shard := range shards {
-		if height >= shard.start && height <= shard.end {
+		if height >= shard.Start && (height <= shard.End || shard.End == 0) {
 			return shard
 		}
 	}
@@ -95,6 +109,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Extract height
 	height, err := extractHeightFromParams(paramsReq.Params)
 	if err != nil {
+
 		http.Error(w, "failed to extract height: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -102,7 +117,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Find the correct shard
 	shard := findShard(height, r.shards)
 	if shard == nil {
-		http.Error(w, "no shard found for height", http.StatusNotFound)
+		// TODO: incorrect auto-generated code, this needs to return an error message specific to the call
+		// if the height is not found.
+		http.Error(w, errNoShardFound.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -110,7 +127,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Assume each apiShard has a ServeHTTP method or an http.Handler
 	// If not, you may need to implement a forwarding mechanism (e.g., HTTP client to shard's endpoint)
 	// Forward the request to the shard's endpoint using http.Client
-	proxyReq, err := http.NewRequestWithContext(req.Context(), req.Method, shard.endpoint, bytes.NewReader(body))
+	proxyReq, err := http.NewRequestWithContext(req.Context(), req.Method, shard.Endpoint, bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "failed to create proxy request: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -136,5 +153,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
-	panic(err)
+	if err != nil {
+		panic(fmt.Errorf("failed to copy response body: %w", err))
+	}
 }
