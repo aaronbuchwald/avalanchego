@@ -40,13 +40,12 @@ func New(
 	log logging.Logger,
 	currentStateDir string,
 ) (*vmShard, error) {
-	params, close, err := newVMParams(log, currentStateDir, configBytes)
+	params, err := createCChainMainnetVMParams(log, currentStateDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VM params: %w", err)
 	}
-	vm, err := newFromParams(ctx, params)
+	vm, close, err := CreateVM(ctx, params)
 	if err != nil {
-		close()
 		return nil, fmt.Errorf("failed to create VM: %w", err)
 	}
 	return &vmShard{vm: vm, closeDB: close}, nil

@@ -4,28 +4,14 @@
 package evm
 
 import (
-	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/ava-labs/avalanchego/api/metrics"
-	"github.com/ava-labs/avalanchego/chains/atomic"
-	"github.com/ava-labs/avalanchego/database"
-	"github.com/ava-labs/avalanchego/database/leveldb"
-	"github.com/ava-labs/avalanchego/database/prefixdb"
 	"github.com/ava-labs/avalanchego/genesis"
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/snow"
-	"github.com/ava-labs/avalanchego/snow/engine/enginetest"
-	"github.com/ava-labs/avalanchego/snow/engine/snowman/block"
-	"github.com/ava-labs/avalanchego/snow/validators/validatorstest"
-	"github.com/ava-labs/avalanchego/tests"
 	"github.com/ava-labs/avalanchego/upgrade"
 	"github.com/ava-labs/avalanchego/utils/constants"
-	"github.com/ava-labs/avalanchego/utils/crypto/bls/signer/localsigner"
 	"github.com/ava-labs/avalanchego/utils/logging"
-	"github.com/ava-labs/avalanchego/vms/metervm"
-	"github.com/ava-labs/avalanchego/vms/platformvm/warp"
 	"github.com/ava-labs/coreth/plugin/evm"
 	"github.com/ava-labs/coreth/plugin/factory"
 	"github.com/prometheus/client_golang/prometheus"
@@ -45,149 +31,57 @@ func init() {
 	evm.RegisterAllLibEVMExtras()
 }
 
-type vmParams struct {
-	vmAndSharedMemoryDB database.Database
-	chainDataDir        string
-	configBytes         []byte
-	vmMultiGatherer     metrics.MultiGatherer
-	meterVMRegistry     prometheus.Registerer
-}
-
-func newVMParams(log logging.Logger, currentStateDir string, configBytes []byte) (*vmParams, func() error, error) {
+// createCChainMainnetVMParams creates VMParams with C-Chain mainnet configuration
+func createCChainMainnetVMParams(
+	log logging.Logger,
+	currentStateDir string,
+) (*VMParams, error) {
 	// Create the prefix gatherer passed to the VM and register it with the top-level,
 	// labeled gatherer.
 	prefixGatherer := metrics.NewPrefixGatherer()
 
 	vmMultiGatherer := metrics.NewPrefixGatherer()
 	if err := prefixGatherer.Register("avalanche_evm", vmMultiGatherer); err != nil {
-		return nil, nil, fmt.Errorf("failed to register vmMultiGatherer: %w", err)
+		return nil, fmt.Errorf("failed to register vmMultiGatherer: %w", err)
 	}
 
 	meterVMRegistry := prometheus.NewRegistry()
 	if err := prefixGatherer.Register("avalanche_meterchainvm", meterVMRegistry); err != nil {
-		return nil, nil, fmt.Errorf("failed to register meterVMRegistry: %w", err)
+		return nil, fmt.Errorf("failed to register meterVMRegistry: %w", err)
 	}
 
 	// consensusRegistry includes the chain="C" label and the prefix "avalanche_snowman".
 	// The consensus registry is passed to the executor to mimic a subset of consensus metrics.
 	consensusRegistry := prometheus.NewRegistry()
 	if err := prefixGatherer.Register("avalanche_snowman", consensusRegistry); err != nil {
-		return nil, nil, fmt.Errorf("failed to register consensusRegistry: %w", err)
+		return nil, fmt.Errorf("failed to register consensusRegistry: %w", err)
 	}
 
-	// TODO: provide a way to handle the registry. Normally this is orchestrated by AvalancheGo
-	// and retrievable from the AvalancheGo Metrics API.
-	// By running externally, we lose the metrics server, continuous profiling, and possibly other
-	// services normally handled by AvalancheGo and worth replicating for VMs running externally.
-
-	var (
-		vmDBDir      = filepath.Join(currentStateDir, "db")
-		chainDataDir = filepath.Join(currentStateDir, "chain-data-dir")
-	)
-
-	db, err := leveldb.New(vmDBDir, nil, log, prometheus.NewRegistry())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create DB: %w", err)
-	}
-	return &vmParams{
-		vmAndSharedMemoryDB: db,
-		chainDataDir:        chainDataDir,
-		configBytes:         configBytes,
-		vmMultiGatherer:     vmMultiGatherer,
-		meterVMRegistry:     meterVMRegistry,
-	}, db.Close, nil
-}
-
-func newFromParams(
-	ctx context.Context,
-	params *vmParams,
-) (block.ChainVM, error) {
-	factory := factory.Factory{}
-	vmIntf, err := factory.New(logging.NoLog{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create VM from factory: %w", err)
-	}
-	vm := vmIntf.(block.ChainVM)
-
-	blsKey, err := localsigner.New()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create BLS key: %w", err)
-	}
-
-	blsPublicKey := blsKey.PublicKey()
-	warpSigner := warp.NewSigner(blsKey, constants.MainnetID, mainnetCChainID)
-
+	// Get mainnet genesis configuration
 	genesisConfig := genesis.GetConfig(constants.MainnetID)
 
-	sharedMemoryDB := prefixdb.New([]byte("sharedmemory"), params.vmAndSharedMemoryDB)
-	atomicMemory := atomic.NewMemory(sharedMemoryDB)
-
+	// Create chainIDToSubnetID mapping
 	chainIDToSubnetID := map[ids.ID]ids.ID{
 		mainnetXChainID: constants.PrimaryNetworkID,
 		mainnetCChainID: constants.PrimaryNetworkID,
 		ids.Empty:       constants.PrimaryNetworkID,
 	}
 
-	vm = metervm.NewBlockVM(vm, params.meterVMRegistry)
-
-	if err := vm.Initialize(
-		ctx,
-		&snow.Context{
-			NetworkID:       constants.MainnetID,
-			SubnetID:        constants.PrimaryNetworkID,
-			ChainID:         mainnetCChainID,
-			NodeID:          ids.GenerateTestNodeID(),
-			PublicKey:       blsPublicKey,
-			NetworkUpgrades: upgrade.Mainnet,
-
-			XChainID:    mainnetXChainID,
-			CChainID:    mainnetCChainID,
-			AVAXAssetID: mainnetAvaxAssetID,
-
-			Log:          tests.NewDefaultLogger("mainnet-vm-reexecution"),
-			SharedMemory: atomicMemory.NewSharedMemory(mainnetCChainID),
-			BCLookup:     ids.NewAliaser(),
-			Metrics:      params.vmMultiGatherer,
-
-			WarpSigner: warpSigner,
-
-			ValidatorState: &validatorstest.State{
-				GetSubnetIDF: func(_ context.Context, chainID ids.ID) (ids.ID, error) {
-					subnetID, ok := chainIDToSubnetID[chainID]
-					if ok {
-						return subnetID, nil
-					}
-					return ids.Empty, fmt.Errorf("unknown chainID: %s", chainID)
-				},
-			},
-			ChainDataDir: params.chainDataDir,
-		},
-		prefixdb.New([]byte("vm"), params.vmAndSharedMemoryDB),
-		[]byte(genesisConfig.CChainGenesis),
-		nil,
-		params.configBytes,
-		nil,
-		&enginetest.Sender{},
-	); err != nil {
-		return nil, fmt.Errorf("failed to initialize VM: %w", err)
-	}
-
-	return vm, nil
-}
-
-func newVM(
-	ctx context.Context,
-	log logging.Logger,
-	currentStateDir string,
-) (block.ChainVM, func() error, error) {
-	params, close, err := newVMParams(log, currentStateDir, configBytes)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create VM params: %w", err)
-	}
-	vm, err := newFromParams(ctx, params)
-	if err != nil {
-		close()
-		return nil, nil, fmt.Errorf("failed to create VM: %w", err)
-	}
-	return vm, close, nil
+	return &VMParams{
+		Factory:           factory.Factory{},
+		CurrentStateDir:   currentStateDir,
+		VMMultiGatherer:   vmMultiGatherer,
+		MeterVMRegistry:   meterVMRegistry,
+		ChainIDToSubnetID: chainIDToSubnetID,
+		NetworkID:         constants.MainnetID,
+		SubnetID:          constants.PrimaryNetworkID,
+		ChainID:           mainnetCChainID,
+		NetworkUpgrades:   upgrade.Mainnet,
+		XChainID:          mainnetXChainID,
+		CChainID:          mainnetCChainID,
+		AVAXAssetID:       mainnetAvaxAssetID,
+		GenesisBytes:      []byte(genesisConfig.CChainGenesis),
+		UpgradeBytes:      nil,
+		ConfigBytes:       configBytes,
+	}, nil
 }
