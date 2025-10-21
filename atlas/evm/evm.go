@@ -4,8 +4,11 @@
 package evm
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/ava-labs/avalanchego/atlas/shard"
+	"github.com/ava-labs/avalanchego/atlas/vm"
 	"github.com/ava-labs/avalanchego/genesis"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/upgrade"
@@ -14,6 +17,8 @@ import (
 	"github.com/ava-labs/coreth/plugin/evm"
 	"github.com/ava-labs/coreth/plugin/factory"
 )
+
+var EVMShardFactory shard.ShardFactory = (*Factory)(nil)
 
 var (
 	mainnetXChainID    = ids.FromStringOrPanic("2oYMBNV4eNHyqk2fjjV5nVQLDbtmNJzq5s3qs3Lo6ftnC6FByM")
@@ -32,12 +37,15 @@ var (
 	testnetGenesis = []byte(genesis.GetConfig(constants.FujiID).CChainGenesis)
 	localGenesis   = []byte(genesis.GetConfig(constants.LocalID).CChainGenesis)
 
-	networkConfigMap = map[uint32]NetworkConfig{
+	networkConfigMap = map[uint32]vm.NetworkConfig{
 		constants.MainnetID: {
 			NetworkID:       constants.MainnetID,
 			SubnetID:        constants.PrimaryNetworkID,
 			ChainID:         mainnetCChainID,
 			NetworkUpgrades: upgrade.Mainnet,
+			XChainID:        mainnetXChainID,
+			CChainID:        mainnetCChainID,
+			AVAXAssetID:     mainnetAvaxAssetID,
 			ChainIDToSubnetID: map[ids.ID]ids.ID{
 				mainnetXChainID: constants.PrimaryNetworkID,
 				mainnetCChainID: constants.PrimaryNetworkID,
@@ -51,6 +59,9 @@ var (
 			SubnetID:        constants.PrimaryNetworkID,
 			ChainID:         testnetCChainID,
 			NetworkUpgrades: upgrade.Fuji,
+			XChainID:        testnetXChainID,
+			CChainID:        testnetCChainID,
+			AVAXAssetID:     testnetAVAXAssetID,
 			ChainIDToSubnetID: map[ids.ID]ids.ID{
 				testnetXChainID: constants.PrimaryNetworkID,
 				ids.Empty:       constants.PrimaryNetworkID,
@@ -64,6 +75,9 @@ var (
 			SubnetID:        constants.PrimaryNetworkID,
 			ChainID:         localCChainID,
 			NetworkUpgrades: upgrade.Default,
+			XChainID:        localXChainID,
+			CChainID:        localCChainID,
+			AVAXAssetID:     localAVAXAssetID,
 			ChainIDToSubnetID: map[ids.ID]ids.ID{
 				localXChainID: constants.PrimaryNetworkID,
 				ids.Empty:     constants.PrimaryNetworkID,
@@ -75,7 +89,10 @@ var (
 	}
 
 	configBytes = []byte(`{
-		"pruning-enabled": false
+		"pruning-enabled": false,
+		"state-sync-commit-interval": 1,
+		"commit-interval": 1,
+		"state-sync-min-blocks": 1
 	}`)
 )
 
@@ -87,16 +104,34 @@ func newCChainArchiveVMParams(
 	networkID uint32,
 	log logging.Logger,
 	currentStateDir string,
-) (*VMParams, error) {
+) (*vm.VMParams, error) {
 	networkConfig, ok := networkConfigMap[networkID]
 	if !ok {
 		return nil, fmt.Errorf("unknown networkID: %d", networkID)
 	}
-	return NewVMParams(
+	return vm.NewVMParams(
 		"evm",
 		&factory.Factory{},
 		currentStateDir,
 		networkConfig,
 		configBytes,
 	)
+}
+
+type Factory struct{}
+
+func (f *Factory) New(ctx context.Context, log logging.Logger, stateDir string) (shard.Shard, error) {
+	return NewMainnetAtlasVM(ctx, log, stateDir)
+}
+
+func NewMainnetAtlasVM(
+	ctx context.Context,
+	log logging.Logger,
+	stateDir string,
+) (*vm.AtlasVM, error) {
+	vmParams, err := newCChainArchiveVMParams(constants.MainnetID, log, stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create VM params: %w", err)
+	}
+	return vm.NewAtlasVM(ctx, vmParams)
 }

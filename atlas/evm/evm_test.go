@@ -15,7 +15,10 @@ import (
 
 	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
 	"github.com/ava-labs/avalanchego/atlas/shard"
+	"github.com/ava-labs/avalanchego/atlas/vm"
 	"github.com/ava-labs/avalanchego/tests"
+	"github.com/ava-labs/avalanchego/utils/constants"
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/coreth/ethclient"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -25,11 +28,13 @@ import (
 //go:embed blockdata/*
 var blockDataFiles embed.FS
 
+var blockBytes [][]byte
+
 type shardTest struct {
 	require *require.Assertions
 	ctx     context.Context
 	cancel  context.CancelFunc
-	shards  []*vmShard
+	shards  []*vm.AtlasVM
 }
 
 // readBlockData reads blocks in the range [1,20] from the blockdata directory and returns
@@ -63,11 +68,11 @@ func setupWithMultipleShards(tb testing.TB, endBlocks []uint64) *shardTest {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	blocks := readBlockData(tb)
-	shards := make([]*vmShard, len(endBlocks))
+	shards := make([]*vm.AtlasVM, len(endBlocks))
 	for i, endBlock := range endBlocks {
 		log := tests.NewDefaultLogger("test-evm-shard")
 		var err error
-		evmShard, err := New(ctx, log, tb.TempDir())
+		evmShard, err := NewMainnetAtlasVM(ctx, log, tb.TempDir())
 		require.NoError(err)
 		tb.Cleanup(func() {
 			cancel()
@@ -247,6 +252,45 @@ func TestReadShardsWithRouter(t *testing.T) {
 	defer client.Close()
 
 	for i := uint64(1); i < tip; i++ {
+		block, err := client.BlockByNumber(ctx, big.NewInt(int64(i)))
+		require.NoError(err)
+		require.Equal(block.NumberU64(), i)
+	}
+}
+
+func TestStateSyncSplit(t *testing.T) {
+	shardTest := setup(t)
+	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
+	defer cancel()
+
+	blocks := readBlockData(t)
+	executeBlocks(t, ctx, vmShard, blocks[:10])
+
+	targetStateDir := t.TempDir()
+	targetVMParams, err := newCChainArchiveVMParams(constants.MainnetID, logging.NoLog{}, targetStateDir)
+	require.NoError(err)
+	require.NoError(vmShard.Split(ctx, targetVMParams, 10))
+
+	freshVMParams, err := newCChainArchiveVMParams(constants.MainnetID, logging.NoLog{}, targetStateDir)
+	require.NoError(err)
+
+	targetVM, err := vm.NewAtlasVM(ctx, freshVMParams)
+	require.NoError(err)
+	defer targetVM.Shutdown(ctx)
+
+	executeBlocks(t, ctx, targetVM, blocks[10:])
+
+	targetShardServer, err := shard.NewServer(ctx, targetVM)
+	require.NoError(err)
+
+	server := httptest.NewServer(targetShardServer)
+	defer server.Close()
+
+	client, err := ethclient.Dial(server.URL + "/rpc")
+	require.NoError(err)
+	defer client.Close()
+
+	for i := uint64(10); i <= 20; i++ {
 		block, err := client.BlockByNumber(ctx, big.NewInt(int64(i)))
 		require.NoError(err)
 		require.Equal(block.NumberU64(), i)
