@@ -21,18 +21,22 @@ import (
 	"github.com/ava-labs/avalanchego/upgrade"
 	"github.com/ava-labs/avalanchego/utils/crypto/bls/signer/localsigner"
 	"github.com/ava-labs/avalanchego/utils/logging"
+	"github.com/ava-labs/avalanchego/vms"
 	"github.com/ava-labs/avalanchego/vms/metervm"
 	"github.com/ava-labs/avalanchego/vms/platformvm/warp"
-	"github.com/ava-labs/coreth/plugin/factory"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type VMParams struct {
-	Factory           factory.Factory
-	CurrentStateDir   string
-	VMMultiGatherer   metrics.MultiGatherer
-	MeterVMRegistry   prometheus.Registerer
-	ChainIDToSubnetID map[ids.ID]ids.ID
+	Factory         vms.Factory
+	CurrentStateDir string
+	VMMultiGatherer metrics.MultiGatherer
+	MeterVMRegistry prometheus.Registerer
+	NetworkConfig   NetworkConfig
+	ConfigBytes     []byte
+}
+
+type NetworkConfig struct {
 	NetworkID         uint32
 	SubnetID          ids.ID
 	ChainID           ids.ID
@@ -42,7 +46,40 @@ type VMParams struct {
 	AVAXAssetID       ids.ID
 	GenesisBytes      []byte
 	UpgradeBytes      []byte
-	ConfigBytes       []byte
+	ChainIDToSubnetID map[ids.ID]ids.ID
+}
+
+func NewVMParams(
+	vmName string,
+	factory vms.Factory,
+	currentStateDir string,
+	networkConfig NetworkConfig,
+	configBytes []byte,
+) (*VMParams, error) {
+	// Create the prefix gatherer passed to the VM and register it with the top-level,
+	// labeled gatherer.
+	prefixGatherer := metrics.NewPrefixGatherer()
+
+	vmMultiGatherer := metrics.NewPrefixGatherer()
+	if err := prefixGatherer.Register(fmt.Sprintf("avalanche_%s", vmName), vmMultiGatherer); err != nil {
+		return nil, fmt.Errorf("failed to register vmMultiGatherer: %w", err)
+	}
+
+	meterVMRegistry := prometheus.NewRegistry()
+	if err := prefixGatherer.Register("avalanche_meterchainvm", meterVMRegistry); err != nil {
+		return nil, fmt.Errorf("failed to register meterVMRegistry: %w", err)
+	}
+	// TODO: add back consensus metrics
+
+	params := &VMParams{
+		Factory:         factory,
+		VMMultiGatherer: vmMultiGatherer,
+		MeterVMRegistry: meterVMRegistry,
+		CurrentStateDir: currentStateDir,
+		NetworkConfig:   networkConfig,
+		ConfigBytes:     configBytes,
+	}
+	return params, nil
 }
 
 // CreateVM creates a new VM instance from the provided VMParams
@@ -64,7 +101,7 @@ func CreateVM(
 	}
 
 	blsPublicKey := blsKey.PublicKey()
-	warpSigner := warp.NewSigner(blsKey, params.NetworkID, params.ChainID)
+	warpSigner := warp.NewSigner(blsKey, params.NetworkConfig.NetworkID, params.NetworkConfig.ChainID)
 
 	// Create databases
 	var (
@@ -86,19 +123,19 @@ func CreateVM(
 	if err := vm.Initialize(
 		ctx,
 		&snow.Context{
-			NetworkID:       params.NetworkID,
-			SubnetID:        params.SubnetID,
-			ChainID:         params.ChainID,
+			NetworkID:       params.NetworkConfig.NetworkID,
+			SubnetID:        params.NetworkConfig.SubnetID,
+			ChainID:         params.NetworkConfig.ChainID,
 			NodeID:          ids.GenerateTestNodeID(),
 			PublicKey:       blsPublicKey,
-			NetworkUpgrades: params.NetworkUpgrades,
+			NetworkUpgrades: params.NetworkConfig.NetworkUpgrades,
 
-			XChainID:    params.XChainID,
-			CChainID:    params.CChainID,
-			AVAXAssetID: params.AVAXAssetID,
+			XChainID:    params.NetworkConfig.XChainID,
+			CChainID:    params.NetworkConfig.CChainID,
+			AVAXAssetID: params.NetworkConfig.AVAXAssetID,
 
 			Log:          tests.NewDefaultLogger("vm"),
-			SharedMemory: atomicMemory.NewSharedMemory(params.ChainID),
+			SharedMemory: atomicMemory.NewSharedMemory(params.NetworkConfig.ChainID),
 			BCLookup:     ids.NewAliaser(),
 			Metrics:      params.VMMultiGatherer,
 
@@ -106,7 +143,7 @@ func CreateVM(
 
 			ValidatorState: &validatorstest.State{
 				GetSubnetIDF: func(_ context.Context, chainID ids.ID) (ids.ID, error) {
-					subnetID, ok := params.ChainIDToSubnetID[chainID]
+					subnetID, ok := params.NetworkConfig.ChainIDToSubnetID[chainID]
 					if ok {
 						return subnetID, nil
 					}
@@ -116,8 +153,8 @@ func CreateVM(
 			ChainDataDir: chainDataDir,
 		},
 		prefixdb.New([]byte("vm"), db),
-		params.GenesisBytes,
-		params.UpgradeBytes,
+		params.NetworkConfig.GenesisBytes,
+		params.NetworkConfig.UpgradeBytes,
 		params.ConfigBytes,
 		nil,
 		&enginetest.Sender{},

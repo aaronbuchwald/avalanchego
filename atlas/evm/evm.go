@@ -6,7 +6,6 @@ package evm
 import (
 	"fmt"
 
-	"github.com/ava-labs/avalanchego/api/metrics"
 	"github.com/ava-labs/avalanchego/genesis"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/upgrade"
@@ -14,13 +13,66 @@ import (
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/coreth/plugin/evm"
 	"github.com/ava-labs/coreth/plugin/factory"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
 	mainnetXChainID    = ids.FromStringOrPanic("2oYMBNV4eNHyqk2fjjV5nVQLDbtmNJzq5s3qs3Lo6ftnC6FByM")
 	mainnetCChainID    = ids.FromStringOrPanic("2q9e4r6Mu3U68nU1fYjgbR6JvwrRx36CohpAX5UQxse55x1Q5")
 	mainnetAvaxAssetID = ids.FromStringOrPanic("FvwEAhmxKfeiG8SnEvq42hc6whRyY3EFYAvebMqDNDGCgxN5Z")
+
+	testnetCChainID    = ids.FromStringOrPanic("yH8D7ThNJkxmtkuv2jgBa4P1Rn3Qpr4pPr7QYNfcdoS6k6HWp")
+	testnetXChainID    = ids.FromStringOrPanic("2JVSBoinj9C2J33VntvzYtVJNZdN2NKiwwKjcumHUWEb5DbBrm")
+	testnetAVAXAssetID = ids.FromStringOrPanic("U8iRqJoiJm8xZHAacmvYyZVwqQx6uDNtQeP3CQ6fcgQk3JqnK")
+
+	localCChainID    = ids.FromStringOrPanic("2owdGqyG6FFzTHy5qhenDXQcEghvr571KZE3gSfRJERSJinuwC")
+	localXChainID    = ids.FromStringOrPanic("2eNy1mUFdmaxXNj1eQHUe7Np4gju9sJsEtWQ4MX3ToiNKuADed")
+	localAVAXAssetID = ids.FromStringOrPanic("2fombhL7aGPwj3KH4bfrmJwW6PVnMobf9Y2fn9GwxiAAJyFDbe")
+
+	mainnetGenesis = []byte(genesis.GetConfig(constants.MainnetID).CChainGenesis)
+	testnetGenesis = []byte(genesis.GetConfig(constants.FujiID).CChainGenesis)
+	localGenesis   = []byte(genesis.GetConfig(constants.LocalID).CChainGenesis)
+
+	networkConfigMap = map[uint32]NetworkConfig{
+		constants.MainnetID: {
+			NetworkID:       constants.MainnetID,
+			SubnetID:        constants.PrimaryNetworkID,
+			ChainID:         mainnetCChainID,
+			NetworkUpgrades: upgrade.Mainnet,
+			ChainIDToSubnetID: map[ids.ID]ids.ID{
+				mainnetXChainID: constants.PrimaryNetworkID,
+				mainnetCChainID: constants.PrimaryNetworkID,
+				ids.Empty:       constants.PrimaryNetworkID,
+			},
+			GenesisBytes: []byte(genesis.GetConfig(constants.MainnetID).CChainGenesis),
+			UpgradeBytes: nil,
+		},
+		constants.FujiID: {
+			NetworkID:       constants.FujiID,
+			SubnetID:        constants.PrimaryNetworkID,
+			ChainID:         testnetCChainID,
+			NetworkUpgrades: upgrade.Fuji,
+			ChainIDToSubnetID: map[ids.ID]ids.ID{
+				testnetXChainID: constants.PrimaryNetworkID,
+				ids.Empty:       constants.PrimaryNetworkID,
+				testnetCChainID: constants.PrimaryNetworkID,
+			},
+			GenesisBytes: []byte(genesis.GetConfig(constants.FujiID).CChainGenesis),
+			UpgradeBytes: nil,
+		},
+		constants.LocalID: {
+			NetworkID:       constants.LocalID,
+			SubnetID:        constants.PrimaryNetworkID,
+			ChainID:         localCChainID,
+			NetworkUpgrades: upgrade.Default,
+			ChainIDToSubnetID: map[ids.ID]ids.ID{
+				localXChainID: constants.PrimaryNetworkID,
+				ids.Empty:     constants.PrimaryNetworkID,
+				localCChainID: constants.PrimaryNetworkID,
+			},
+			GenesisBytes: []byte(genesis.GetConfig(constants.LocalID).CChainGenesis),
+			UpgradeBytes: nil,
+		},
+	}
 
 	configBytes = []byte(`{
 		"pruning-enabled": false
@@ -31,57 +83,20 @@ func init() {
 	evm.RegisterAllLibEVMExtras()
 }
 
-// createCChainMainnetVMParams creates VMParams with C-Chain mainnet configuration
-func createCChainMainnetVMParams(
+func newCChainArchiveVMParams(
+	networkID uint32,
 	log logging.Logger,
 	currentStateDir string,
 ) (*VMParams, error) {
-	// Create the prefix gatherer passed to the VM and register it with the top-level,
-	// labeled gatherer.
-	prefixGatherer := metrics.NewPrefixGatherer()
-
-	vmMultiGatherer := metrics.NewPrefixGatherer()
-	if err := prefixGatherer.Register("avalanche_evm", vmMultiGatherer); err != nil {
-		return nil, fmt.Errorf("failed to register vmMultiGatherer: %w", err)
+	networkConfig, ok := networkConfigMap[networkID]
+	if !ok {
+		return nil, fmt.Errorf("unknown networkID: %d", networkID)
 	}
-
-	meterVMRegistry := prometheus.NewRegistry()
-	if err := prefixGatherer.Register("avalanche_meterchainvm", meterVMRegistry); err != nil {
-		return nil, fmt.Errorf("failed to register meterVMRegistry: %w", err)
-	}
-
-	// consensusRegistry includes the chain="C" label and the prefix "avalanche_snowman".
-	// The consensus registry is passed to the executor to mimic a subset of consensus metrics.
-	consensusRegistry := prometheus.NewRegistry()
-	if err := prefixGatherer.Register("avalanche_snowman", consensusRegistry); err != nil {
-		return nil, fmt.Errorf("failed to register consensusRegistry: %w", err)
-	}
-
-	// Get mainnet genesis configuration
-	genesisConfig := genesis.GetConfig(constants.MainnetID)
-
-	// Create chainIDToSubnetID mapping
-	chainIDToSubnetID := map[ids.ID]ids.ID{
-		mainnetXChainID: constants.PrimaryNetworkID,
-		mainnetCChainID: constants.PrimaryNetworkID,
-		ids.Empty:       constants.PrimaryNetworkID,
-	}
-
-	return &VMParams{
-		Factory:           factory.Factory{},
-		CurrentStateDir:   currentStateDir,
-		VMMultiGatherer:   vmMultiGatherer,
-		MeterVMRegistry:   meterVMRegistry,
-		ChainIDToSubnetID: chainIDToSubnetID,
-		NetworkID:         constants.MainnetID,
-		SubnetID:          constants.PrimaryNetworkID,
-		ChainID:           mainnetCChainID,
-		NetworkUpgrades:   upgrade.Mainnet,
-		XChainID:          mainnetXChainID,
-		CChainID:          mainnetCChainID,
-		AVAXAssetID:       mainnetAvaxAssetID,
-		GenesisBytes:      []byte(genesisConfig.CChainGenesis),
-		UpgradeBytes:      nil,
-		ConfigBytes:       configBytes,
-	}, nil
+	return NewVMParams(
+		"evm",
+		&factory.Factory{},
+		currentStateDir,
+		networkConfig,
+		configBytes,
+	)
 }

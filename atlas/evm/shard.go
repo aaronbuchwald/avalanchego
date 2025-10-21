@@ -11,6 +11,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/avalanchego/snow/engine/snowman/block"
+	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/logging"
 )
 
@@ -27,7 +28,7 @@ func (f *vmShardFactory) New(ctx context.Context, log logging.Logger, stateDir s
 
 type vmShard struct {
 	vm      block.ChainVM
-	closeDB func() error
+	closeDB func() error // TODO: push closing the DB into the VM agnostic layer and assume they all base vm db that must be closed
 }
 
 func newAdapter(vm block.ChainVM) *vmShard {
@@ -40,7 +41,7 @@ func New(
 	log logging.Logger,
 	currentStateDir string,
 ) (*vmShard, error) {
-	params, err := createCChainMainnetVMParams(log, currentStateDir)
+	params, err := newCChainArchiveVMParams(constants.MainnetID, log, currentStateDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VM params: %w", err)
 	}
