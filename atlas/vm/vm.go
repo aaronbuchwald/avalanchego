@@ -219,9 +219,9 @@ func (v *AtlasVM) Shutdown(ctx context.Context) error {
 	)
 }
 
-// Split creates a VM based on one state directory and creates a new one at height N
+// Clone creates a VM based on one state directory and creates a new one at height N
 // based off of that state directory.
-func (v *AtlasVM) Split(
+func (v *AtlasVM) Clone(
 	ctx context.Context,
 	targetVMParams *VMParams,
 	targetHeight uint64,
