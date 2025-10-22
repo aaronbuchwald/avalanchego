@@ -259,7 +259,7 @@ func TestReadShardsWithRouter(t *testing.T) {
 	}
 }
 
-func TestClone(t *testing.T) {
+func TestSplitAtHeight(t *testing.T) {
 	shardTest := setup(t)
 	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
 	defer cancel()
@@ -270,7 +270,7 @@ func TestClone(t *testing.T) {
 	targetStateDir := t.TempDir()
 	targetVMParams, err := newCChainArchiveVMParams(constants.MainnetID, logging.NoLog{}, targetStateDir)
 	require.NoError(err)
-	require.NoError(vmShard.Clone(ctx, targetVMParams, 10))
+	require.NoError(vmShard.SplitAtHeight(ctx, targetVMParams, 10))
 
 	freshVMParams, err := newCChainArchiveVMParams(constants.MainnetID, logging.NoLog{}, targetStateDir)
 	require.NoError(err)
