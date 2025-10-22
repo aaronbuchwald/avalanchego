@@ -24,7 +24,12 @@ type WriteShard interface {
 	ExecuteBlock(ctx context.Context, blockBytes []byte) error
 }
 
+type SplittableShard interface {
+	SplitAtHeight(ctx context.Context, targetHeight uint64, targetStateDir string) error
+}
+
 type Shard interface {
 	ReadShard
 	WriteShard
+	SplittableShard
 }
