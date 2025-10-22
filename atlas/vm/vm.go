@@ -26,10 +26,10 @@ import (
 	"github.com/ava-labs/avalanchego/utils/crypto/bls/signer/localsigner"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/set"
-	"github.com/ava-labs/avalanchego/version"
 	"github.com/ava-labs/avalanchego/vms"
 	"github.com/ava-labs/avalanchego/vms/metervm"
 	"github.com/ava-labs/avalanchego/vms/platformvm/warp"
+	statesyncclient "github.com/ava-labs/coreth/sync/client"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -242,25 +242,17 @@ func (v *AtlasVM) Split(
 	)
 
 	sourceSender.SendAppResponseF = func(ctx context.Context, nodeID ids.NodeID, requestID uint32, response []byte) error {
-		if nodeID != targetNodeID {
-			return fmt.Errorf("attempted to send response to unexpected nodeID: %s", nodeID)
-		}
-
-		go targetVM.AppResponse(ctx, nodeID, requestID, response)
+		go targetVM.AppResponse(ctx, sourceNodeID, requestID, response)
 		return nil
 	}
 	targetSender.SendAppRequestF = func(ctx context.Context, nodeIDs set.Set[ids.NodeID], requestID uint32, request []byte) error {
-		if nodeIDs.Len() != 1 && nodeIDs.Contains(sourceNodeID) {
-			return fmt.Errorf("attempted to send request to unexpected set of nodeIDs: %v", nodeIDs)
-		}
-
 		return sourceVM.AppRequest(ctx, sourceNodeID, requestID, time.Now().Add(1*time.Second), request)
 	}
 
-	if err := targetVM.Connected(ctx, sourceNodeID, &version.Application{}); err != nil {
+	if err := targetVM.Connected(ctx, sourceNodeID, statesyncclient.StateSyncVersion); err != nil {
 		return fmt.Errorf("failed to connect target VM to source VM: %w", err)
 	}
-	if err := sourceVM.Connected(ctx, targetNodeID, &version.Application{}); err != nil {
+	if err := sourceVM.Connected(ctx, targetNodeID, statesyncclient.StateSyncVersion); err != nil {
 		return fmt.Errorf("failed to connect source VM to target VM: %w", err)
 	}
 

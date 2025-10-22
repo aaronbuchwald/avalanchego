@@ -90,6 +90,7 @@ var (
 
 	configBytes = []byte(`{
 		"pruning-enabled": false,
+		"state-sync-enabled": true,
 		"state-sync-commit-interval": 1,
 		"commit-interval": 1,
 		"state-sync-min-blocks": 1
