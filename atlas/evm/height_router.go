@@ -20,7 +20,8 @@ var (
 	errNoShardFound              = errors.New("no shard found for height")
 	// mapping from method name to the corresponding index of the height parameter
 	methodToHeightParamIndex = map[string]int{
-		"eth_getBlockByNumber": 0,
+		"eth_getBlockByNumber":    0,
+		"eth_getTransactionCount": 1,
 	}
 )
 

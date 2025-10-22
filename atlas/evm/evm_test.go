@@ -20,6 +20,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/coreth/ethclient"
+	"github.com/ava-labs/libevm/common"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -95,6 +96,18 @@ func setup(tb testing.TB) *shardTest {
 	return setupWithMultipleShards(tb, []uint64{0}) // Create a single shard at genesis
 }
 
+func assertStateAvailable(tb testing.TB, ctx context.Context, client *ethclient.Client, blockNumber uint64, stateAvailable bool) {
+	require := require.New(tb)
+
+	testAddr := common.HexToAddress("0x376c47978271565f56DEB45495afa69E59c16Ab2")
+	_, err := client.NonceAt(ctx, testAddr, big.NewInt(int64(blockNumber)))
+	if stateAvailable {
+		require.NoError(err, "expected state to be available for block %d", blockNumber)
+	} else {
+		require.ErrorContains(err, "cannot query unfinalized data", "expected state to be unavailable for block %d", blockNumber)
+	}
+}
+
 func TestReadShard(t *testing.T) {
 	shardTest := setup(t)
 	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
@@ -110,9 +123,7 @@ func TestReadShard(t *testing.T) {
 	require.NoError(err)
 	defer client.Close()
 
-	blockNumber, err := client.BlockNumber(ctx)
-	require.NoError(err)
-	require.Equal(blockNumber, uint64(0))
+	assertStateAvailable(t, ctx, client, 0, true)
 }
 
 func TestActiveShard(t *testing.T) {
@@ -159,9 +170,7 @@ func TestActiveShard(t *testing.T) {
 		})
 		require.NoError(err)
 
-		blockNumber, err = client.BlockNumber(ctx)
-		require.NoError(err)
-		require.Equal(blockNumber, uint64(i))
+		assertStateAvailable(t, ctx, client, uint64(i), true)
 	}
 }
 
@@ -195,19 +204,13 @@ func TestReadShardsManual(t *testing.T) {
 	for i := uint64(1); i < tip; i++ {
 		// Confirm expected behavior for shard0 (include blocks <= shard0Tip, exclude blocks > shard0Tip)
 		if i <= shard0Tip {
-			block, err := shard0Client.BlockByNumber(ctx, big.NewInt(int64(i)))
-			require.NoError(err)
-			require.Equal(block.NumberU64(), i)
+			assertStateAvailable(t, ctx, shard0Client, uint64(i), true)
 		} else {
-			block, err := shard0Client.BlockByNumber(ctx, big.NewInt(int64(i)))
-			require.ErrorContains(err, "cannot query unfinalized data")
-			require.Nil(block)
+			assertStateAvailable(t, ctx, shard0Client, uint64(i), false)
 		}
 		// Confirm expected behavior for shard1 (include all blocks <= shard1Tip)
 		if i <= shard1Tip {
-			block, err := shard1Client.BlockByNumber(ctx, big.NewInt(int64(i)))
-			require.NoError(err)
-			require.Equal(block.NumberU64(), i)
+			assertStateAvailable(t, ctx, shard1Client, uint64(i), true)
 		}
 	}
 }
@@ -252,9 +255,7 @@ func TestReadShardsWithRouter(t *testing.T) {
 	defer client.Close()
 
 	for i := uint64(1); i < tip; i++ {
-		block, err := client.BlockByNumber(ctx, big.NewInt(int64(i)))
-		require.NoError(err)
-		require.Equal(block.NumberU64(), i)
+		assertStateAvailable(t, ctx, client, uint64(i), true)
 	}
 }
 
@@ -291,8 +292,6 @@ func TestStateSyncSplit(t *testing.T) {
 	defer client.Close()
 
 	for i := uint64(10); i <= 20; i++ {
-		block, err := client.BlockByNumber(ctx, big.NewInt(int64(i)))
-		require.NoError(err)
-		require.Equal(block.NumberU64(), i)
+		assertStateAvailable(t, ctx, client, uint64(i), true)
 	}
 }
