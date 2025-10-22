@@ -16,9 +16,7 @@ import (
 	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
 	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/avalanchego/atlas/vm"
-	"github.com/ava-labs/avalanchego/tests"
 	"github.com/ava-labs/avalanchego/utils/constants"
-	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/coreth/ethclient"
 	"github.com/ava-labs/libevm/common"
 	"github.com/stretchr/testify/require"
@@ -71,9 +69,8 @@ func setupWithMultipleShards(tb testing.TB, endBlocks []uint64) *shardTest {
 	blocks := readBlockData(tb)
 	shards := make([]*vm.AtlasVM, len(endBlocks))
 	for i, endBlock := range endBlocks {
-		log := tests.NewDefaultLogger("test-evm-shard")
 		var err error
-		evmShard, err := NewMainnetAtlasVM(ctx, log, tb.TempDir())
+		evmShard, err := NewMainnetAtlasVM(ctx, tb.TempDir())
 		require.NoError(err)
 		tb.Cleanup(func() {
 			cancel()
@@ -268,14 +265,12 @@ func TestSplitAtHeight(t *testing.T) {
 	executeBlocks(t, ctx, vmShard, blocks[:10])
 
 	targetStateDir := t.TempDir()
-	targetVMParams, err := newCChainArchiveVMParams(constants.MainnetID, logging.NoLog{}, targetStateDir)
-	require.NoError(err)
-	require.NoError(vmShard.SplitAtHeight(ctx, targetVMParams, 10))
+	require.NoError(vmShard.SplitAtHeight(ctx, 10, targetStateDir))
 
-	freshVMParams, err := newCChainArchiveVMParams(constants.MainnetID, logging.NoLog{}, targetStateDir)
+	freshVMParams, err := newCChainArchiveVMParams(constants.MainnetID)
 	require.NoError(err)
 
-	targetVM, err := vm.NewAtlasVM(ctx, freshVMParams)
+	targetVM, err := vm.NewAtlasVM(ctx, freshVMParams, targetStateDir)
 	require.NoError(err)
 	defer targetVM.Shutdown(ctx)
 

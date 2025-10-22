@@ -103,17 +103,14 @@ func init() {
 
 func newCChainArchiveVMParams(
 	networkID uint32,
-	log logging.Logger,
-	currentStateDir string,
-) (*vm.VMParams, error) {
+) (vm.VMParams, error) {
 	networkConfig, ok := networkConfigMap[networkID]
 	if !ok {
-		return nil, fmt.Errorf("unknown networkID: %d", networkID)
+		return vm.VMParams{}, fmt.Errorf("unknown networkID: %d", networkID)
 	}
 	return vm.NewVMParams(
 		"evm",
 		&factory.Factory{},
-		currentStateDir,
 		networkConfig,
 		configBytes,
 	)
@@ -122,17 +119,16 @@ func newCChainArchiveVMParams(
 type Factory struct{}
 
 func (f *Factory) New(ctx context.Context, log logging.Logger, stateDir string) (shard.Shard, error) {
-	return NewMainnetAtlasVM(ctx, log, stateDir)
+	return NewMainnetAtlasVM(ctx, stateDir)
 }
 
 func NewMainnetAtlasVM(
 	ctx context.Context,
-	log logging.Logger,
 	stateDir string,
 ) (*vm.AtlasVM, error) {
-	vmParams, err := newCChainArchiveVMParams(constants.MainnetID, log, stateDir)
+	vmParams, err := newCChainArchiveVMParams(constants.MainnetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VM params: %w", err)
 	}
-	return vm.NewAtlasVM(ctx, vmParams)
+	return vm.NewAtlasVM(ctx, vmParams, stateDir)
 }

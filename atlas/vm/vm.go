@@ -39,12 +39,10 @@ var (
 )
 
 type VMParams struct {
-	Factory         vms.Factory
-	CurrentStateDir string
-	VMMultiGatherer metrics.MultiGatherer
-	MeterVMRegistry prometheus.Registerer
-	NetworkConfig   NetworkConfig
-	ConfigBytes     []byte
+	Name          string
+	Factory       vms.Factory
+	NetworkConfig NetworkConfig
+	ConfigBytes   []byte
 }
 
 type NetworkConfig struct {
@@ -63,32 +61,14 @@ type NetworkConfig struct {
 func NewVMParams(
 	vmName string,
 	factory vms.Factory,
-	currentStateDir string,
 	networkConfig NetworkConfig,
 	configBytes []byte,
-) (*VMParams, error) {
-	// Create the prefix gatherer passed to the VM and register it with the top-level,
-	// labeled gatherer.
-	prefixGatherer := metrics.NewPrefixGatherer()
-
-	vmMultiGatherer := metrics.NewPrefixGatherer()
-	if err := prefixGatherer.Register(fmt.Sprintf("avalanche_%s", vmName), vmMultiGatherer); err != nil {
-		return nil, fmt.Errorf("failed to register vmMultiGatherer: %w", err)
-	}
-
-	meterVMRegistry := prometheus.NewRegistry()
-	if err := prefixGatherer.Register("avalanche_meterchainvm", meterVMRegistry); err != nil {
-		return nil, fmt.Errorf("failed to register meterVMRegistry: %w", err)
-	}
-	// TODO: add back consensus metrics
-
-	params := &VMParams{
-		Factory:         factory,
-		VMMultiGatherer: vmMultiGatherer,
-		MeterVMRegistry: meterVMRegistry,
-		CurrentStateDir: currentStateDir,
-		NetworkConfig:   networkConfig,
-		ConfigBytes:     configBytes,
+) (VMParams, error) {
+	params := VMParams{
+		Name:          vmName,
+		Factory:       factory,
+		NetworkConfig: networkConfig,
+		ConfigBytes:   configBytes,
 	}
 	return params, nil
 }
@@ -96,6 +76,7 @@ func NewVMParams(
 type AtlasVM struct {
 	block.ChainVM
 
+	params  VMParams
 	sender  *enginetest.Sender
 	snowCtx *snow.Context
 	closeDB func() error
@@ -103,8 +84,25 @@ type AtlasVM struct {
 
 func NewAtlasVM(
 	ctx context.Context,
-	params *VMParams,
+	params VMParams,
+	currentStateDir string,
 ) (*AtlasVM, error) {
+	// Create the prefix gatherer passed to the VM and register it with the top-level,
+	// labeled gatherer.
+	prefixGatherer := metrics.NewPrefixGatherer()
+
+	vmMultiGatherer := metrics.NewPrefixGatherer()
+	if err := prefixGatherer.Register(fmt.Sprintf("avalanche_%s", params.Name), vmMultiGatherer); err != nil {
+		return nil, fmt.Errorf("failed to register vmMultiGatherer: %w", err)
+	}
+
+	meterVMRegistry := prometheus.NewRegistry()
+	if err := prefixGatherer.Register("avalanche_meterchainvm", meterVMRegistry); err != nil {
+		return nil, fmt.Errorf("failed to register meterVMRegistry: %w", err)
+	}
+
+	// TODO: add back consensus metrics registry and handling in ExecuteBlock
+
 	// Create VM from factory
 	vmIntf, err := params.Factory.New(logging.NoLog{})
 	if err != nil {
@@ -123,8 +121,8 @@ func NewAtlasVM(
 
 	// Create databases
 	var (
-		vmDBDir      = filepath.Join(params.CurrentStateDir, "db")
-		chainDataDir = filepath.Join(params.CurrentStateDir, "chain-data-dir")
+		vmDBDir      = filepath.Join(currentStateDir, "db")
+		chainDataDir = filepath.Join(currentStateDir, "chain-data-dir")
 	)
 
 	db, err := leveldb.New(vmDBDir, nil, logging.NoLog{}, prometheus.NewRegistry())
@@ -136,7 +134,7 @@ func NewAtlasVM(
 	atomicMemory := atomic.NewMemory(sharedMemoryDB)
 
 	// Wrap VM with metervm
-	vm = metervm.NewBlockVM(vm, params.MeterVMRegistry)
+	vm = metervm.NewBlockVM(vm, meterVMRegistry)
 	sender := &enginetest.Sender{}
 
 	snowCtx := &snow.Context{
@@ -154,7 +152,7 @@ func NewAtlasVM(
 		Log:          tests.NewDefaultLogger("vm"),
 		SharedMemory: atomicMemory.NewSharedMemory(params.NetworkConfig.ChainID),
 		BCLookup:     ids.NewAliaser(),
-		Metrics:      params.VMMultiGatherer,
+		Metrics:      vmMultiGatherer,
 
 		WarpSigner: warpSigner,
 
@@ -185,6 +183,7 @@ func NewAtlasVM(
 
 	return &AtlasVM{
 		ChainVM: vm,
+		params:  params,
 		snowCtx: snowCtx,
 		sender:  sender,
 		closeDB: db.Close,
@@ -223,12 +222,12 @@ func (v *AtlasVM) Shutdown(ctx context.Context) error {
 // based off of that state directory.
 func (v *AtlasVM) SplitAtHeight(
 	ctx context.Context,
-	targetVMParams *VMParams,
 	targetHeight uint64,
+	targetStateDir string,
 ) error {
 	sourceVM := v
 
-	targetVM, err := NewAtlasVM(ctx, targetVMParams)
+	targetVM, err := NewAtlasVM(ctx, v.params, targetStateDir)
 	if err != nil {
 		return fmt.Errorf("failed to create target VM: %w", err)
 	}
