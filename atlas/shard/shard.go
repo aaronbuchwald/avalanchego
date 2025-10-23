@@ -28,6 +28,7 @@ type SplittableShard interface {
 	SplitAtHeight(ctx context.Context, targetHeight uint64, targetStateDir string) error
 }
 
+// TODO: finalize interface
 type Shard interface {
 	ReadShard
 	WriteShard

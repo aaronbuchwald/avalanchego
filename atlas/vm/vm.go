@@ -23,6 +23,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow/validators/validatorstest"
 	"github.com/ava-labs/avalanchego/tests"
 	"github.com/ava-labs/avalanchego/upgrade"
+	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/crypto/bls/signer/localsigner"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/set"
@@ -38,6 +39,7 @@ var (
 	_ shard.Shard   = (*AtlasVM)(nil)
 )
 
+// TODO: collapse under avalanche subpackage
 type VMParams struct {
 	Name          string
 	Factory       vms.Factory
@@ -63,7 +65,7 @@ func NewVMParams(
 	factory vms.Factory,
 	networkConfig NetworkConfig,
 	configBytes []byte,
-) (VMParams, error) {
+) (VMParams, error) { // TODO: remove error from signature
 	params := VMParams{
 		Name:          vmName,
 		Factory:       factory,
@@ -89,6 +91,7 @@ func NewAtlasVM(
 ) (*AtlasVM, error) {
 	// Create the prefix gatherer passed to the VM and register it with the top-level,
 	// labeled gatherer.
+	// TODO: expose metrics server and optionally a collector in-process.
 	prefixGatherer := metrics.NewPrefixGatherer()
 
 	vmMultiGatherer := metrics.NewPrefixGatherer()
@@ -101,7 +104,7 @@ func NewAtlasVM(
 		return nil, fmt.Errorf("failed to register meterVMRegistry: %w", err)
 	}
 
-	// TODO: add back consensus metrics registry and handling in ExecuteBlock
+	// TODO: add back consensus metrics registry following the same pattern in vm_reexecute_test.go
 
 	// Create VM from factory
 	vmIntf, err := params.Factory.New(logging.NoLog{})
@@ -137,6 +140,16 @@ func NewAtlasVM(
 	vm = metervm.NewBlockVM(vm, meterVMRegistry)
 	sender := &enginetest.Sender{}
 
+	bcLookup := ids.NewAliaser()
+	aliasErr := errors.Join(
+		bcLookup.Alias(params.NetworkConfig.XChainID, "X"),
+		bcLookup.Alias(params.NetworkConfig.CChainID, "C"),
+		bcLookup.Alias(constants.PlatformChainID, "P"),
+	)
+	if aliasErr != nil {
+		return nil, fmt.Errorf("failed to alias chains: %w", aliasErr)
+	}
+
 	snowCtx := &snow.Context{
 		NetworkID:       params.NetworkConfig.NetworkID,
 		SubnetID:        params.NetworkConfig.SubnetID,
@@ -151,7 +164,7 @@ func NewAtlasVM(
 
 		Log:          tests.NewDefaultLogger("vm"),
 		SharedMemory: atomicMemory.NewSharedMemory(params.NetworkConfig.ChainID),
-		BCLookup:     ids.NewAliaser(),
+		BCLookup:     bcLookup,
 		Metrics:      vmMultiGatherer,
 
 		WarpSigner: warpSigner,
