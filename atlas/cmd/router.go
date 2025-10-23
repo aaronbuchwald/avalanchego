@@ -27,8 +27,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ava-labs/avalanchego/atlas/avalanche/vms/evm"
 	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
-	"github.com/ava-labs/avalanchego/atlas/evm"
 	atlashttp "github.com/ava-labs/avalanchego/atlas/http"
 	"github.com/spf13/cobra"
 )

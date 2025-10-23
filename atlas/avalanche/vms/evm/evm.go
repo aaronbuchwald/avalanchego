@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ava-labs/avalanchego/atlas/avalanche/vm"
 	"github.com/ava-labs/avalanchego/atlas/shard"
-	"github.com/ava-labs/avalanchego/atlas/vm"
 	"github.com/ava-labs/avalanchego/genesis"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/upgrade"

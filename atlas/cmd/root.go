@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ava-labs/avalanchego/atlas/evm"
+	"github.com/ava-labs/avalanchego/atlas/avalanche/vms/evm"
 	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/spf13/cobra"

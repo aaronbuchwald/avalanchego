@@ -13,9 +13,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ava-labs/avalanchego/atlas/avalanche/vm"
 	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
 	"github.com/ava-labs/avalanchego/atlas/shard"
-	"github.com/ava-labs/avalanchego/atlas/vm"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/coreth/ethclient"
 	"github.com/ava-labs/libevm/common"
