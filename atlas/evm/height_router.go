@@ -5,6 +5,7 @@ package evm
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,12 +19,18 @@ import (
 var (
 	_               http.Handler = (*Router)(nil)
 	errNoShardFound              = errors.New("no shard found for height")
+
+	//go:embed methodToHeightParamIndex.json
+	methodToHeightParamIndexJSON []byte
 	// mapping from method name to the corresponding index of the height parameter
-	methodToHeightParamIndex = map[string]int{
-		"eth_getBlockByNumber":    0,
-		"eth_getTransactionCount": 1,
-	}
+	methodToHeightParamIndex map[string]int
 )
+
+func init() {
+	if err := json.Unmarshal(methodToHeightParamIndexJSON, &methodToHeightParamIndex); err != nil {
+		panic(fmt.Errorf("failed to unmarshal methodToHeightParamIndex.json: %w", err))
+	}
+}
 
 // TODO: make boundaries dynamic to support active + archival process w/o restart
 type APIShard struct {
