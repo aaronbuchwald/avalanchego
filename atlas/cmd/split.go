@@ -51,7 +51,7 @@ func init() {
 func registerSplitFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String(sourceStateDirFlag, "", "The directory to store the source state of the shard")
 	cmd.PersistentFlags().String(targetStateDirFlag, "", "The directory to store the target state of the shard")
-	cmd.PersistentFlags().Uint64(heightFlag, 0, "The height to split the shard at")
+	cmd.PersistentFlags().String(heightFlag, "", "The height to split the shard at (supports suffixes: k, m, b)")
 }
 
 func getSplitFlags(cmd *cobra.Command) (sourceStateDir string, targetStateDir string, height uint64, err error) {
@@ -63,9 +63,13 @@ func getSplitFlags(cmd *cobra.Command) (sourceStateDir string, targetStateDir st
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to get target state directory: %w", err)
 	}
-	height, err = cmd.PersistentFlags().GetUint64(heightFlag)
+	heightStr, err := cmd.PersistentFlags().GetString(heightFlag)
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to get height: %w", err)
+	}
+	height, err = parseHeight(heightStr)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("failed to parse height: %w", err)
 	}
 	return sourceStateDir, targetStateDir, height, nil
 }

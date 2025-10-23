@@ -50,16 +50,6 @@ func init() {
 	routerCmd.PersistentFlags().StringArray(shardsFlag, []string{}, "The addresses of the shards to route to")
 	routerCmd.PersistentFlags().Int(portFlag, 8080, "The port to listen on")
 	routerCmd.PersistentFlags().String(logLevelFlag, "info", "The log level to use")
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// routerCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// routerCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 // parseHeight converts a height string to uint64, supporting k/m/b suffixes
