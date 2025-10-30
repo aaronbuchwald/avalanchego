@@ -39,7 +39,6 @@ var (
 	_ shard.Shard   = (*AtlasVM)(nil)
 )
 
-// TODO: collapse under avalanche subpackage
 type VMParams struct {
 	Name          string
 	Factory       vms.Factory
@@ -65,14 +64,13 @@ func NewVMParams(
 	factory vms.Factory,
 	networkConfig NetworkConfig,
 	configBytes []byte,
-) (VMParams, error) { // TODO: remove error from signature
-	params := VMParams{
+) VMParams {
+	return VMParams{
 		Name:          vmName,
 		Factory:       factory,
 		NetworkConfig: networkConfig,
 		ConfigBytes:   configBytes,
 	}
-	return params, nil
 }
 
 type AtlasVM struct {
@@ -303,5 +301,26 @@ func (v *AtlasVM) SplitAtHeight(
 	if err := targetVM.SetState(ctx, snow.Bootstrapping); err != nil {
 		return fmt.Errorf("failed to set target VM to bootstrapping: %w", err)
 	}
+	return nil
+}
+
+// this abstraction boundary is a little bit weird
+// I'd like to get rid of the block relay and gRPC shard server
+func (v *AtlasVM) Configure(ctx context.Context, heightRange shard.HeightRange) error {
+	_, err := v.ChainVM.GetBlockIDAtHeight(ctx, heightRange.Start)
+	if err != nil {
+		return fmt.Errorf("failed to get block ID at height range start %d: %w", heightRange.Start, err)
+	}
+
+	if heightRange.End != nil {
+		// handle not found
+		_, err := v.ChainVM.GetBlockIDAtHeight(ctx, *heightRange.End)
+		if err != nil {
+			return fmt.Errorf("failed to get block ID at height range end %d: %w", *heightRange.End, err)
+		}
+		// If it is missing, then get the last accepted block
+	}
+
+	// If the end marker is nil, then we need to continue to sync to the tip.
 	return nil
 }

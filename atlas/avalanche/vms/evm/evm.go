@@ -113,7 +113,7 @@ func newCChainArchiveVMParams(
 		&factory.Factory{},
 		networkConfig,
 		configBytes,
-	)
+	), nil
 }
 
 type Factory struct{}

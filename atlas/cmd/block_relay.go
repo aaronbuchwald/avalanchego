@@ -6,13 +6,11 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"math/big"
-	"time"
 
 	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
 	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
+	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/coreth/ethclient"
-	"github.com/ava-labs/libevm/rlp"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -71,6 +69,21 @@ func runBlockRelay(cmd *cobra.Command, args []string) error {
 	return serveBlockRelay(ctx, lastAcceptedBlock, websocketEndpoint, activeShardAddress)
 }
 
+type BlockRelayHandler struct {
+	shardClient pb.WriteShardClient
+}
+
+func NewBlockRelayHandler(shardClient pb.WriteShardClient) *BlockRelayHandler {
+	return &BlockRelayHandler{
+		shardClient: shardClient,
+	}
+}
+
+func (h *BlockRelayHandler) HandleBlockResult(ctx context.Context, blockResult shard.BlockResult) error {
+	_, err := h.shardClient.ExecuteBlock(ctx, &pb.ExecuteBlockRequest{BlockBytes: blockResult.Block})
+	return err
+}
+
 func serveBlockRelay(ctx context.Context, lastAcceptedBlock uint64, websocketEndpoint string, activeShardAddress string) error {
 	client, err := ethclient.DialContext(ctx, websocketEndpoint)
 	if err != nil {
@@ -86,59 +99,10 @@ func serveBlockRelay(ctx context.Context, lastAcceptedBlock uint64, websocketEnd
 
 	shardClient := pb.NewWriteShardClient(grpcConn)
 
-	return executeActiveShard(ctx, client, shardClient, lastAcceptedBlock)
-}
-
-func executeActiveShard(ctx context.Context, client *ethclient.Client, shardClient pb.WriteShardClient, lastAcceptedBlock uint64) error {
-	currentBlock := lastAcceptedBlock
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		latestBlock, err := client.BlockNumber(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get block number: %w", err)
-		}
-		if currentBlock <= latestBlock {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		err = executeBlocksToLatest(ctx, client, shardClient, currentBlock, latestBlock)
-		if err != nil {
-			return fmt.Errorf("failed to execute blocks: %w", err)
-		}
-		currentBlock = latestBlock
-	}
-}
-
-func executeBlocksToLatest(
-	ctx context.Context,
-	client *ethclient.Client,
-	shardClient pb.WriteShardClient,
-	lastAcceptedBlock uint64,
-	latestBlock uint64,
-) error {
-	for currentBlock := lastAcceptedBlock + 1; currentBlock < latestBlock; currentBlock++ {
-		block, err := client.BlockByNumber(ctx, big.NewInt(int64(currentBlock)))
-		if err != nil {
-			return fmt.Errorf("failed to get block: %w", err)
-		}
-		blockBytes, err := rlp.EncodeToBytes(block)
-		if err != nil {
-			return fmt.Errorf("failed to encode block: %w", err)
-		}
-		_, err = shardClient.ExecuteBlock(ctx, &pb.ExecuteBlockRequest{
-			BlockBytes: blockBytes,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to execute block %d: %w", currentBlock, err)
-		}
+	blockResults, err := createBlockResultStreamFromClient(ctx, client, log, lastAcceptedBlock)
+	if err != nil {
+		return fmt.Errorf("failed to create block result stream: %w", err)
 	}
 
-	return nil
+	return shard.IngestBlockStream(ctx, NewBlockRelayHandler(shardClient), blockResults)
 }

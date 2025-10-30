@@ -5,6 +5,8 @@ package shard
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 
 	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
@@ -48,4 +50,24 @@ func ServeGRPCShard(ctx context.Context, listener net.Listener, shard WriteShard
 	}()
 
 	grpcutils.Serve(listener, grpcServer)
+}
+
+type BlockResultHandler interface {
+	HandleBlockResult(ctx context.Context, blockResult BlockResult) error
+}
+
+func IngestBlockStream(ctx context.Context, blockResultHandler BlockResultHandler, blockResults <-chan BlockResult) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case blockRes, ok := <-blockResults:
+			if !ok {
+				return errors.New("block results channel closed unexpectedly")
+			}
+			if err := blockResultHandler.HandleBlockResult(ctx, blockRes); err != nil {
+				return fmt.Errorf("failed to execute block %d: %w", blockRes.Height, err)
+			}
+		}
+	}
 }
