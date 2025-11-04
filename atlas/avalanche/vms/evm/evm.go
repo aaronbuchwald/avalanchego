@@ -95,6 +95,7 @@ var (
 		"commit-interval": 1,
 		"state-sync-min-blocks": 1
 	}`)
+	// TODO: state-sync-commit-interval and commit-interval should only be set to 1 for testing
 )
 
 func init() {
