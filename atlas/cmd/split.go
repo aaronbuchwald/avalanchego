@@ -27,6 +27,7 @@ import (
 
 	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 const (
@@ -91,6 +92,12 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create source shard: %w", err)
 	}
 	defer sourceShard.Shutdown(ctx)
+
+	log.Info("Performing split at height",
+		zap.Uint64("height", height),
+		zap.String("sourceStateDir", sourceStateDir),
+		zap.String("targetStateDir", targetStateDir),
+	)
 
 	return sourceShard.SplitAtHeight(ctx, height, targetStateDir)
 }
