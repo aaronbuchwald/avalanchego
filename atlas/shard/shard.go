@@ -22,8 +22,18 @@ type HeightRange struct {
 type ReadShard interface {
 	Shutdown(ctx context.Context) error
 	CreateHandlers(ctx context.Context) (map[string]http.Handler, error)
-	// TODO: add HeightRange to ReadShard interface
-	// HeightRange(ctx context.Context) (HeightRange, error)
+}
+
+type BlockClient interface {
+	GetBlockByHeight(ctx context.Context, height uint64) ([]byte, error)
+	GetMaxHeight(ctx context.Context) (uint64, error)
+}
+
+type ConfigurableShard interface {
+	// Configure attempts to ensure that the shard is configured to support API calls covering the prescribed
+	// height range. If the shard is incomplete or needs to continue actively syncing (to support a nil end marker),
+	// Configure runs until the context is cancelled and terminates without an error.
+	Configure(ctx context.Context, heightRange HeightRange, blockClient BlockClient) error
 }
 
 type BlockResult struct {
@@ -43,5 +53,5 @@ type Shard interface {
 	ReadShard
 	WriteShard
 	SplittableShard
+	ConfigurableShard
 }
-

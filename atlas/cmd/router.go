@@ -30,6 +30,7 @@ import (
 	"github.com/ava-labs/avalanchego/atlas/avalanche/vms/evm"
 	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
 	atlashttp "github.com/ava-labs/avalanchego/atlas/http"
+	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/spf13/cobra"
 )
 
@@ -134,10 +135,15 @@ func runRouter(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid height range in %q: %w", spec, err)
 		}
+		heightRange := shard.HeightRange{
+			Start: start,
+		}
+		if end != 0 {
+			heightRange.End = &end
+		}
 		shards = append(shards, &evm.APIShard{
-			Endpoint: parts[0],
-			Start:    start,
-			End:      end,
+			Endpoint:    parts[0],
+			HeightRange: heightRange,
 		})
 	}
 

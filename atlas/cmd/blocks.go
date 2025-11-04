@@ -25,9 +25,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ava-labs/avalanchego/atlas/avalanche/vms/evm"
 	"github.com/ava-labs/avalanchego/atlas/blockdb"
 	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
 	atlashttp "github.com/ava-labs/avalanchego/atlas/http"
+	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/coreth/ethclient"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -115,11 +117,12 @@ func runBlocks(cmd *cobra.Command, args []string) error {
 		}
 		defer client.Close()
 
-		blockResults, err := createBlockResultStreamFromClient(ctx, client, log, blockDB.GetMaxHeight())
+		blockClient := evm.NewEVMBlockClient(client)
+		blockResults, err := shard.CreateBlockStreamFromClient(ctx, blockClient, blockDB.GetMaxHeight())
 		if err != nil {
 			return fmt.Errorf("failed to create block result stream: %w", err)
 		}
-		return blockdb.IngestBlockStream(ctx, blockDB, blockResults)
+		return shard.IngestBlockStream(ctx, blockdb.NewBlockDBResultHandler(blockDB), blockResults)
 	})
 
 	return eg.Wait()

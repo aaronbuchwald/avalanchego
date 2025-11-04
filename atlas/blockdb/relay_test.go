@@ -21,10 +21,13 @@ func TestIngestBlockStream(t *testing.T) {
 	// Create a channel and send some blocks
 	blockResults := make(chan shard.BlockResult)
 
+	// Create handler using Strategy pattern
+	handler := NewBlockDBResultHandler(blockDB)
+
 	// Run IngestBlockStream in a goroutine
 	errChan := make(chan error)
 	go func() {
-		errChan <- IngestBlockStream(ctx, blockDB, blockResults)
+		errChan <- shard.IngestBlockStream(ctx, handler, blockResults)
 	}()
 
 	// Send blocks

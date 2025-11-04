@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/libevm/common/hexutil"
 )
@@ -32,11 +33,9 @@ func init() {
 	}
 }
 
-// TODO: make boundaries dynamic to support active + archival process w/o restart
 type APIShard struct {
-	Start    uint64 // Start block of the shard's range. Never changes.
-	End      uint64 // End block of the shard's range. 0 indicates the shard is active and contains Start to tip.
-	Endpoint string
+	HeightRange shard.HeightRange
+	Endpoint    string
 }
 
 // Atlas assumes that it only handles queries that access state at a specific height. All other queries can be handled without
@@ -118,7 +117,7 @@ func extractHeightFromParams(method string, params []interface{}) (uint64, error
 // findShard returns the first shard that contains height or nil of no such shard exists
 func findShard(height uint64, shards []*APIShard) *APIShard {
 	for _, shard := range shards {
-		if height >= shard.Start && (height <= shard.End || shard.End == 0) {
+		if height >= shard.HeightRange.Start && (shard.HeightRange.End == nil || height <= *shard.HeightRange.End) {
 			return shard
 		}
 	}

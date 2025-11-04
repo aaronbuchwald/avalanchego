@@ -63,9 +63,9 @@ func NewClient(uri string) *Client {
 }
 
 // GetBlockByHeight returns the block bytes at the given height.
-func (c *Client) GetBlockByHeight(ctx context.Context, height uint64, options ...rpcClient.Option) ([]byte, error) {
+func (c *Client) GetBlockByHeight(ctx context.Context, height uint64) ([]byte, error) {
 	res := &GetBlockByHeightResponse{}
-	if err := c.Requester.SendRequest(ctx, "blocks.getBlockByHeight", &GetBlockByHeightArgs{Height: height}, res, options...); err != nil {
+	if err := c.Requester.SendRequest(ctx, "blocks.getBlockByHeight", &GetBlockByHeightArgs{Height: height}, res); err != nil {
 		return nil, err
 	}
 
@@ -76,9 +76,9 @@ func (c *Client) GetBlockByHeight(ctx context.Context, height uint64, options ..
 	return blockBytes, nil
 }
 
-func (c *Client) GetMaxHeight(ctx context.Context, options ...rpcClient.Option) (uint64, error) {
+func (c *Client) GetMaxHeight(ctx context.Context) (uint64, error) {
 	res := &GetMaxHeightResponse{}
-	if err := c.Requester.SendRequest(ctx, "blocks.getMaxHeight", &struct{}{}, res, options...); err != nil {
+	if err := c.Requester.SendRequest(ctx, "blocks.getMaxHeight", &struct{}{}, res); err != nil {
 		return 0, err
 	}
 	return res.Height, nil

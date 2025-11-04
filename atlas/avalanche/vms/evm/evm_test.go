@@ -9,19 +9,17 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"net"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ava-labs/avalanchego/atlas/avalanche/vm"
-	pb "github.com/ava-labs/avalanchego/atlas/proto/pb/writeshard"
+	"github.com/ava-labs/avalanchego/atlas/blockdb"
 	"github.com/ava-labs/avalanchego/atlas/shard"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/coreth/ethclient"
 	"github.com/ava-labs/libevm/common"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 //go:embed blockdata/*
@@ -34,6 +32,19 @@ type shardTest struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	shards  []*vm.AtlasVM
+}
+
+// blockClientAdapter adapts a blockdb.Client to the shard.BlockClient interface
+type blockClientAdapter struct {
+	client *blockdb.Client
+}
+
+func (a *blockClientAdapter) GetBlockByHeight(ctx context.Context, height uint64) ([]byte, error) {
+	return a.client.GetBlockByHeight(ctx, height)
+}
+
+func (a *blockClientAdapter) GetMaxHeight(ctx context.Context) (uint64, error) {
+	return a.client.GetMaxHeight(ctx)
 }
 
 // readBlockData reads blocks in the range [1,20] from the blockdata directory and returns
@@ -72,10 +83,6 @@ func setupWithMultipleShards(tb testing.TB, endBlocks []uint64) *shardTest {
 		var err error
 		evmShard, err := NewMainnetAtlasVM(ctx, tb.TempDir())
 		require.NoError(err)
-		tb.Cleanup(func() {
-			cancel()
-			require.NoError(evmShard.Shutdown(ctx))
-		})
 		shards[i] = evmShard
 
 		executeBlocks(tb, ctx, evmShard, blocks[:endBlock])
@@ -126,19 +133,16 @@ func TestReadShard(t *testing.T) {
 func TestActiveShard(t *testing.T) {
 	shardTest := setup(t)
 	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
-	defer cancel()
+	defer func() {
+		cancel()
+		require.NoError(vmShard.Shutdown(ctx))
+	}()
 
 	shardServer, err := shard.NewServer(shardTest.ctx, vmShard)
 	require.NoError(err)
 
 	testServer := httptest.NewServer(shardServer)
 	defer testServer.Close()
-
-	listener, err := net.Listen("tcp", ":0")
-	require.NoError(err)
-	defer listener.Close()
-
-	go shard.ServeGRPCShard(ctx, listener, vmShard)
 
 	client, err := ethclient.Dial(testServer.URL + "/rpc")
 	require.NoError(err)
@@ -148,12 +152,6 @@ func TestActiveShard(t *testing.T) {
 	require.NoError(err)
 	require.Equal(blockNumber, uint64(0))
 
-	grpcConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	require.NoError(err)
-	defer grpcConn.Close()
-
-	grpcShardClient := pb.NewWriteShardClient(grpcConn)
-
 	for i := 1; i <= 20; i++ {
 		blockFile, err := blockDataFiles.Open(fmt.Sprintf("blockdata/%d.bin", i))
 		require.NoError(err)
@@ -162,10 +160,7 @@ func TestActiveShard(t *testing.T) {
 		blockBytes, err := io.ReadAll(blockFile)
 		require.NoError(err)
 
-		_, err = grpcShardClient.ExecuteBlock(ctx, &pb.ExecuteBlockRequest{
-			BlockBytes: blockBytes,
-		})
-		require.NoError(err)
+		require.NoError(vmShard.ExecuteBlock(ctx, blockBytes))
 
 		assertStateAvailable(t, ctx, client, uint64(i), true)
 	}
@@ -176,7 +171,11 @@ func TestReadShardsManual(t *testing.T) {
 	tip := shard1Tip
 	shardTest := setupWithMultipleShards(t, []uint64{shard0Tip, shard1Tip})
 	require, ctx, cancel, shard0, shard1 := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0], shardTest.shards[1]
-	defer cancel()
+	defer func() {
+		cancel()
+		require.NoError(shard0.Shutdown(ctx))
+		require.NoError(shard1.Shutdown(ctx))
+	}()
 
 	shard0Server, err := shard.NewServer(shardTest.ctx, shard0)
 	require.NoError(err)
@@ -217,7 +216,11 @@ func TestReadShardsWithRouter(t *testing.T) {
 	tip := shard1Tip
 	shardTest := setupWithMultipleShards(t, []uint64{shard0Tip, shard1Tip})
 	require, ctx, cancel, shard0, shard1 := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0], shardTest.shards[1]
-	defer cancel()
+	defer func() {
+		cancel()
+		require.NoError(shard0.Shutdown(ctx))
+		require.NoError(shard1.Shutdown(ctx))
+	}()
 
 	shard0Server, err := shard.NewServer(shardTest.ctx, shard0)
 	require.NoError(err)
@@ -234,13 +237,17 @@ func TestReadShardsWithRouter(t *testing.T) {
 	router := NewRouter([]*APIShard{
 		{
 			Endpoint: shard0TestServer.URL + "/rpc",
-			Start:    0,
-			End:      shard0Tip,
+			HeightRange: shard.HeightRange{
+				Start: 0,
+				End:   &shard0Tip,
+			},
 		},
 		{
 			Endpoint: shard1TestServer.URL + "/rpc",
-			Start:    shard0Tip,
-			End:      shard1Tip,
+			HeightRange: shard.HeightRange{
+				Start: shard0Tip,
+				End:   &shard1Tip,
+			},
 		},
 	})
 
@@ -259,7 +266,10 @@ func TestReadShardsWithRouter(t *testing.T) {
 func TestSplitAtHeight(t *testing.T) {
 	shardTest := setup(t)
 	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
-	defer cancel()
+	defer func() {
+		cancel()
+		require.NoError(vmShard.Shutdown(ctx))
+	}()
 
 	blocks := readBlockData(t)
 	executeBlocks(t, ctx, vmShard, blocks[:10])
@@ -288,5 +298,240 @@ func TestSplitAtHeight(t *testing.T) {
 
 	for i := uint64(10); i <= 20; i++ {
 		assertStateAvailable(t, ctx, client, uint64(i), true)
+	}
+}
+
+func TestConfigureStaticGenesisRange(t *testing.T) {
+	shardTest := setup(t)
+	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
+	defer func() {
+		cancel()
+		require.NoError(vmShard.Shutdown(ctx))
+	}()
+
+	blocks := readBlockData(t)
+
+	// Create a block database and populate it with blocks [1,10]
+	blockDBInstance, err := blockdb.NewBlockDB(t.TempDir())
+	require.NoError(err)
+	defer blockDBInstance.Close()
+
+	for i := uint64(1); i <= 10; i++ {
+		require.NoError(blockDBInstance.WriteBlock(i, blocks[i-1]))
+	}
+
+	// Create a block client from the database
+	blockDBServer := blockdb.NewHTTPHandler(blockDBInstance)
+	testServer := httptest.NewServer(blockDBServer)
+	defer testServer.Close()
+
+	blockClient := &blockClientAdapter{client: blockdb.NewClient(testServer.URL)}
+
+	// Configure the target VM with static range [0,10] (starting from genesis)
+	startHeight := uint64(0)
+	endHeight := uint64(10)
+	heightRange := shard.HeightRange{
+		Start: startHeight,
+		End:   &endHeight,
+	}
+
+	require.NoError(vmShard.Configure(ctx, heightRange, blockClient))
+
+	// Verify the VM has blocks [1,10]
+	shardServer, err := shard.NewServer(ctx, vmShard)
+	require.NoError(err)
+
+	vmTestServer := httptest.NewServer(shardServer)
+	defer vmTestServer.Close()
+
+	client, err := ethclient.Dial(vmTestServer.URL + "/rpc")
+	require.NoError(err)
+	defer client.Close()
+
+	for i := uint64(1); i <= 10; i++ {
+		assertStateAvailable(t, ctx, client, i, true)
+	}
+
+	// Verify blocks beyond range are not available
+	assertStateAvailable(t, ctx, client, 11, false)
+
+	// Shutdown the VM to simulate a restart
+	require.NoError(vmShard.Shutdown(ctx))
+
+	// Re-create the VM and do not defer the shutdown, since it was already invoked on the same
+	// instance above.
+	vmShard, err = NewMainnetAtlasVM(ctx, t.TempDir())
+	require.NoError(err)
+	// Reconfigure with the same static range [0,10]
+	require.NoError(vmShard.Configure(ctx, heightRange, blockClient))
+
+	// Start a new server and a new client from the restarted VM
+	restartedShardServer, err := shard.NewServer(ctx, vmShard)
+	require.NoError(err)
+	restartedVMTestServer := httptest.NewServer(restartedShardServer)
+	defer restartedVMTestServer.Close()
+
+	restartedClient, err := ethclient.Dial(restartedVMTestServer.URL + "/rpc")
+	require.NoError(err)
+	defer restartedClient.Close()
+
+	// Confirm the static range [1,10] is still available
+	for i := uint64(1); i <= 10; i++ {
+		assertStateAvailable(t, ctx, restartedClient, i, true)
+	}
+
+	// Confirm block 11 is unavailable
+	assertStateAvailable(t, ctx, restartedClient, 11, false)
+}
+
+func TestConfigureDynamicRange(t *testing.T) {
+	shardTest := setup(t)
+	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
+	defer func() {
+		cancel()
+		require.NoError(vmShard.Shutdown(ctx))
+	}()
+
+	blocks := readBlockData(t)
+
+	// Create a block database and populate it with blocks [1,10]
+	blockDBInstance, err := blockdb.NewBlockDB(t.TempDir())
+	require.NoError(err)
+	defer blockDBInstance.Close()
+
+	for i := uint64(1); i <= 10; i++ {
+		require.NoError(blockDBInstance.WriteBlock(i, blocks[i-1]))
+	}
+
+	// Create a block client from the database
+	blockDBServer := blockdb.NewHTTPHandler(blockDBInstance)
+	testServer := httptest.NewServer(blockDBServer)
+	defer testServer.Close()
+
+	blockClient := &blockClientAdapter{client: blockdb.NewClient(testServer.URL)}
+
+	// Configure the target VM with dynamic range [0, nil] (from block 1 to latest available)
+	startHeight := uint64(0)
+	heightRange := shard.HeightRange{
+		Start: startHeight,
+		End:   nil,
+	}
+
+	// XXX: improve testability of Configure as a dynamic range.
+	configureCtx, configureCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer configureCancel()
+	require.NoError(vmShard.Configure(configureCtx, heightRange, blockClient))
+
+	// Verify the VM has blocks [1,10]
+	shardServer, err := shard.NewServer(ctx, vmShard)
+	require.NoError(err)
+
+	vmTestServer := httptest.NewServer(shardServer)
+	defer vmTestServer.Close()
+
+	client, err := ethclient.Dial(vmTestServer.URL + "/rpc")
+	require.NoError(err)
+	defer client.Close()
+
+	for i := uint64(1); i <= 10; i++ {
+		assertStateAvailable(t, ctx, client, i, true)
+	}
+
+	// Verify block 11 is not available (only blocks [1,10] are in blockdb)
+	assertStateAvailable(t, ctx, client, 11, false)
+}
+
+func TestConfigureStaticRangeAfterSplit(t *testing.T) {
+	shardTest := setup(t)
+	require, ctx, cancel, vmShard := shardTest.require, shardTest.ctx, shardTest.cancel, shardTest.shards[0]
+	defer func() {
+		cancel()
+		require.NoError(vmShard.Shutdown(ctx))
+	}()
+
+	blocks := readBlockData(t)
+
+	// Execute blocks [1,10] on the initial VM
+	executeBlocks(t, ctx, vmShard, blocks[:10])
+
+	// Split at height 10
+	targetStateDir := t.TempDir()
+	require.NoError(vmShard.SplitAtHeight(ctx, 10, targetStateDir))
+
+	// Create a fresh VM from the split
+	freshVMParams, err := newCChainArchiveVMParams(constants.MainnetID)
+	require.NoError(err)
+
+	targetVM, err := vm.NewAtlasVM(ctx, freshVMParams, targetStateDir)
+	require.NoError(err)
+	defer func() {
+		require.NoError(targetVM.Shutdown(ctx))
+	}()
+
+	// Create a block database with blocks [11,20]
+	blockDBInstance, err := blockdb.NewBlockDB(t.TempDir())
+	require.NoError(err)
+	defer blockDBInstance.Close()
+
+	for i := uint64(11); i <= 20; i++ {
+		require.NoError(blockDBInstance.WriteBlock(i, blocks[i-1]))
+	}
+
+	// Create a block client from the database
+	blockDBServer := blockdb.NewHTTPHandler(blockDBInstance)
+	testServer := httptest.NewServer(blockDBServer)
+	defer testServer.Close()
+
+	blockClient := &blockClientAdapter{client: blockdb.NewClient(testServer.URL)}
+
+	// Configure the target VM with static range [10,20]
+	// Note: Start should be where we split (10), end is 20
+	startHeight := uint64(10)
+	endHeight := uint64(20)
+	heightRange := shard.HeightRange{
+		Start: startHeight,
+		End:   &endHeight,
+	}
+
+	require.NoError(targetVM.Configure(ctx, heightRange, blockClient))
+
+	// Verify the VM has blocks [10,20]
+	shardServer, err := shard.NewServer(ctx, targetVM)
+	require.NoError(err)
+
+	vmTestServer := httptest.NewServer(shardServer)
+	defer vmTestServer.Close()
+
+	client, err := ethclient.Dial(vmTestServer.URL + "/rpc")
+	require.NoError(err)
+	defer client.Close()
+
+	for i := uint64(11); i <= 20; i++ {
+		assertStateAvailable(t, ctx, client, i, true)
+	}
+
+	// // Shut down and restart the target VM to ensure persistence and block/state availability.
+	require.NoError(targetVM.Shutdown(ctx))
+
+	// Re-create targetVM in the same state directory (targetStateDir)
+	targetVM, err = vm.NewAtlasVM(ctx, freshVMParams, targetStateDir)
+	require.NoError(err)
+
+	// // Reconfigure the height range and block client as before
+	require.NoError(targetVM.Configure(ctx, heightRange, blockClient))
+
+	// Start the server again for the restarted VM
+	shardServer2, err := shard.NewServer(ctx, targetVM)
+	require.NoError(err)
+
+	vmTestServer2 := httptest.NewServer(shardServer2)
+	defer vmTestServer2.Close()
+
+	client2, err := ethclient.Dial(vmTestServer2.URL + "/rpc")
+	require.NoError(err)
+	defer client2.Close()
+
+	for i := uint64(11); i <= 20; i++ {
+		assertStateAvailable(t, ctx, client2, i, true)
 	}
 }

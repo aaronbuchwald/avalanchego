@@ -6,8 +6,8 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net"
 
+	"github.com/ava-labs/avalanchego/atlas/blockdb"
 	atlascontext "github.com/ava-labs/avalanchego/atlas/context"
 	atlashttp "github.com/ava-labs/avalanchego/atlas/http"
 	"github.com/ava-labs/avalanchego/atlas/shard"
@@ -16,10 +16,12 @@ import (
 )
 
 const (
-	stateDirFlag = "state-dir"
-	portFlag     = "port"
-	logLevelFlag = "log-level"
-	grpcPortFlag = "grpc-port"
+	stateDirFlag        = "state-dir"
+	portFlag            = "port"
+	logLevelFlag        = "log-level"
+	startHeightFlag     = "start"
+	endHeightFlag       = "end"
+	blockServerAddrFlag = "block-server-addr"
 )
 
 // serveShardCmd represents the serveShard command
@@ -39,38 +41,42 @@ func init() {
 func registerServeShardFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String(stateDirFlag, "", "The directory to store the state of the shard")
 	cmd.PersistentFlags().Int(portFlag, 0, "The port to serve the shard on")
-	cmd.PersistentFlags().Int(grpcPortFlag, 0, "The port to serve the gRPC server on")
+	cmd.PersistentFlags().Uint64(startHeightFlag, 0, "The start height to serve the shard from")
+	cmd.PersistentFlags().Uint64(endHeightFlag, 0, "The end height to serve the shard to. If set to 0, the shard will attempt to serve blocks up to the latest available block.")
+	cmd.PersistentFlags().String(blockServerAddrFlag, "", "The address of the block server to use")
 }
 
-func getServeShardFlags(cmd *cobra.Command) (stateDir string, port int, err error) {
+func getServeShardFlags(cmd *cobra.Command) (stateDir string, port int, startHeight uint64, endHeight uint64, blockServerAddr string, err error) {
 	stateDir, err = cmd.PersistentFlags().GetString(stateDirFlag)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to get state directory: %w", err)
+		return "", 0, 0, 0, "", fmt.Errorf("failed to get state directory: %w", err)
 	}
 	port, err = cmd.PersistentFlags().GetInt(portFlag)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to get port: %w", err)
+		return "", 0, 0, 0, "", fmt.Errorf("failed to get port: %w", err)
 	}
-	return stateDir, port, nil
+	startHeight, err = cmd.PersistentFlags().GetUint64(startHeightFlag)
+	if err != nil {
+		return "", 0, 0, 0, "", fmt.Errorf("failed to get start height: %w", err)
+	}
+	endHeight, err = cmd.PersistentFlags().GetUint64(endHeightFlag)
+	if err != nil {
+		return "", 0, 0, 0, "", fmt.Errorf("failed to get end height: %w", err)
+	}
+	blockServerAddr, err = cmd.PersistentFlags().GetString(blockServerAddrFlag)
+	if err != nil {
+		return "", 0, 0, 0, "", fmt.Errorf("failed to get block server address: %w", err)
+	}
+	return stateDir, port, startHeight, endHeight, blockServerAddr, nil
 }
 
 func runServeShard(cmd *cobra.Command, args []string) error {
-	stateDir, port, err := getServeShardFlags(cmd)
+	stateDir, port, startHeight, endHeight, blockServerAddr, err := getServeShardFlags(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to get serve shard flags: %w", err)
 	}
 	if err := initLogger(cmd); err != nil {
 		return fmt.Errorf("failed to initialize logger: %w", err)
-	}
-	var (
-		isGRPCPortSet = cmd.PersistentFlags().Changed(grpcPortFlag)
-		grpcPort      int
-	)
-	if isGRPCPortSet {
-		grpcPort, err = cmd.PersistentFlags().GetInt(grpcPortFlag)
-		if err != nil {
-			return fmt.Errorf("failed to get gRPC port: %w", err)
-		}
 	}
 
 	ctx, cancel := atlascontext.WithDefaultSignals(context.Background())
@@ -87,6 +93,17 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create shard server: %w", err)
 	}
 
+	heightRange := shard.HeightRange{
+		Start: startHeight,
+	}
+	if endHeight != 0 {
+		heightRange.End = &endHeight
+	}
+	blockClient := blockdb.NewClient(blockServerAddr)
+	if err != nil {
+		return fmt.Errorf("failed to create block client: %w", err)
+	}
+
 	eg := errgroup.Group{}
 
 	eg.Go(func() error {
@@ -97,19 +114,9 @@ func runServeShard(cmd *cobra.Command, args []string) error {
 			atlashttp.WithPort(port),
 		)
 	})
-
-	if isGRPCPortSet {
-		eg.Go(func() error {
-			grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
-			if err != nil {
-				return fmt.Errorf("failed to listen on gRPC server port %d: %w", grpcPort, err)
-			}
-			defer grpcListener.Close()
-
-			shard.ServeGRPCShard(ctx, grpcListener, readShard)
-			return nil
-		})
-	}
+	eg.Go(func() error {
+		return readShard.Configure(ctx, heightRange, blockClient)
+	})
 
 	return eg.Wait()
 }
