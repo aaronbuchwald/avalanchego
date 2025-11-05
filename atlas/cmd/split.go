@@ -87,6 +87,10 @@ func runSplit(cmd *cobra.Command, args []string) error {
 	ctx, cancel := atlascontext.WithDefaultSignals(context.Background())
 	defer cancel()
 
+	log.Info("Creating source shard",
+		zap.String("sourceStateDir", sourceStateDir),
+	)
+
 	sourceShard, err := shardFactory.New(ctx, log, sourceStateDir)
 	if err != nil {
 		return fmt.Errorf("failed to create source shard: %w", err)
