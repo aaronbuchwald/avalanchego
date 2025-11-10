@@ -147,8 +147,6 @@ func runRouter(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	// TODO: define constructor of base level command that takes in required factories, so the entire CLI can be constructed for
-	// a specific set of concrete implementations.
 	router := evm.NewRouter(shards)
 
 	ctx, cancel := atlascontext.WithDefaultSignals(context.Background())

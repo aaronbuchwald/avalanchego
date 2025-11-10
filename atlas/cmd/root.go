@@ -21,6 +21,8 @@ var (
 )
 
 // rootCmd represents the base command when called without any subcommands
+//
+// TODO: define cobra command in terms of its VM-specific dependencies
 var rootCmd = &cobra.Command{
 	Use:   "atlas",
 	Short: "Atlas is a cloud-native archival blockchain service",

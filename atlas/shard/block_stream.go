@@ -13,8 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: run demo
-// TODO: add health check to all services.
 type BlockResultHandler interface {
 	HandleBlockResult(ctx context.Context, blockResult BlockResult) error
 }
